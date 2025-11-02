@@ -24,6 +24,10 @@ import {
   Module,
 } from './registry';
 
+// Debug: Log available schemas at module load time
+console.log('[patch-reducer] Module loaded. Available schemas:', Object.keys(PANEL_DATA_SCHEMAS));
+console.log('[patch-reducer] evidence_browser schema exists:', !!PANEL_DATA_SCHEMAS['evidence_browser']);
+
 /**
  * Result of patch application
  */
@@ -176,6 +180,8 @@ function applyOperation(
   runMode: 'stable' | 'deep',
   opIndex: number
 ): void {
+  console.log(`[applyOperation] Starting op ${opIndex}:`, op.op, op.path);
+  
   const pathParts = parsePath(op.path);
   
   if (pathParts[0] !== 'panels') {
@@ -223,6 +229,8 @@ function applyAdd(
   runMode: 'stable' | 'deep',
   opIndex: number
 ): void {
+  console.log('[applyAdd] Starting, pathParts:', pathParts, 'value type:', value?.type);
+  
   if (pathParts.length !== 2) {
     throw new PatchError(
       `Invalid add path: expected /panels/- or /panels/<index>`,
@@ -231,8 +239,11 @@ function applyAdd(
     );
   }
   
+  console.log('[applyAdd] About to validate panel');
   // Validate panel structure
   const panelValidation = validatePanel(value);
+  console.log('[applyAdd] Validation result:', panelValidation);
+  
   if (!panelValidation.valid) {
     throw new PatchError(
       `Invalid panel data: ${panelValidation.error}`,

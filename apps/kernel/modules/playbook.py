@@ -8,6 +8,9 @@ from modules.context import ContextPack
 from modules.trace import TraceEntry, write_trace
 from modules import llm
 from modules import proxy_client
+from modules.panel_planner import plan_panels
+from modules.panel_dispatcher import dispatch_panel
+from modules.reasoning_executor import run_auto_actions, extract_actions
 from db import get_conn
 
 # Module-specific allowed domains for citations
@@ -96,127 +99,49 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
     }
     await asyncio.sleep(0.1)
     
-    # Phase 3: Analysis
-    if context.module == "dm":
-        # Development Management flow using DB-backed panels
-        # 0) Map if site coordinates provided
-        lat = (context.site_data or {}).get("lat") if isinstance(context.site_data, dict) else None
-        lng = (context.site_data or {}).get("lng") if isinstance(context.site_data, dict) else None
-        if lat is not None and lng is not None:
-            dm_constraints = db_constraints(context)
-            yield {
-                "type": "intent",
-                "data": {
-                    "action": "show_panel",
-                    "panel": "map",
-                    "data": {"center": {"lat": lat, "lng": lng}, "constraints": dm_constraints},
-                },
-            }
-            await asyncio.sleep(0.1)
-        # 1) Applicable policies (text search on prompt)
-        policies = db_search_policies(context.prompt, limit=6)
-        print(f"DEBUG: Retrieved {len(policies)} policies for prompt: {context.prompt}")
-        yield {
-            "type": "intent",
-            "data": {
-                "action": "show_panel",
-                "panel": "applicable_policies",
-                "data": {"policies": policies, "citations": citations},
-            },
-        }
-        await asyncio.sleep(0.1)
-
-        # 2) Precedents (search summaries)
-        precedents = db_search_precedents(context.prompt, limit=5)
-        yield {
-            "type": "intent",
-            "data": {
-                "action": "show_panel",
-                "panel": "precedents",
-                "data": {"precedents": precedents},
-            },
-        }
-        await asyncio.sleep(0.1)
-
-        # 3) Planning balance (heuristic from counts)
-        balance = compute_planning_balance(policies, precedents)
-        yield {
-            "type": "intent",
-            "data": {
-                "action": "show_panel",
-                "panel": "planning_balance",
-                "data": balance,
-            },
-        }
-        await asyncio.sleep(0.1)
-
-        # 4) Draft decision (simple rule-based summary)
-        draft = compute_draft_decision(balance)
-        yield {
-            "type": "intent",
-            "data": {
-                "action": "show_panel",
-                "panel": "draft_decision",
-                "data": draft,
-            },
-        }
+    # Phase 3: LLM-driven panel planning
+    await write_trace(trace_path, TraceEntry(
+        t=datetime.utcnow().isoformat(),
+        step="plan_panels",
+        module=context.module,
+        input={"prompt": context.prompt}
+    ))
     
-    elif context.module == "policy":
-        # Policy flow: show editor seeded from top policy result
-        policies = db_search_policies(context.prompt or "policy", limit=1)
-        draft_text = (policies[0]["text"] if policies else "")
-        yield {
-            "type": "intent",
-            "data": {
-                "action": "show_panel",
-                "panel": "policy_editor",
-                "data": {"draft_text": draft_text, "suggestions": []},
-            },
-        }
+    panel_plan = await plan_panels(context)
     
-    elif context.module == "strategy":
-        # Strategy flow minimal: reuse planning balance based on policy hits for two queries
-        p1 = db_search_policies(context.prompt + " option A", limit=4)
-        p2 = db_search_policies(context.prompt + " option B", limit=4)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "scenario_compare", "data": {"scenarios": [{"name": "Option A", "score": len(p1)}, {"name": "Option B", "score": len(p2)}]}}}
-        await asyncio.sleep(0.1)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "planning_balance", "data": compute_planning_balance(p1, [])}}
+    await write_trace(trace_path, TraceEntry(
+        t=datetime.utcnow().isoformat(),
+        step="panel_plan",
+        module=context.module,
+        output={"panels": panel_plan}
+    ))
     
-    elif context.module == "vision":
-        # Vision flow: placeholder compliance check panel (no image processing yet)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "visual_compliance", "data": {"compliance": []}}}
+    print(f"[Playbook] Panel plan for {context.module}: {panel_plan}")
     
-    elif context.module == "feedback":
-        # Feedback flow: call service via simple in-process function (reuse minimal theme logic here)
-        themes = compute_themes(context.prompt)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "consultation_themes", "data": {"themes": themes}}}
-    
-    elif context.module == "evidence":
-        # Evidence flow: map + spatial constraints + policies
-        lat = (context.site_data or {}).get("lat") if isinstance(context.site_data, dict) else None
-        lng = (context.site_data or {}).get("lng") if isinstance(context.site_data, dict) else None
-        
-        constraints = db_constraints(context)
-        
-        # Show map panel with constraints if we have coordinates
-        if lat is not None and lng is not None:
-            yield {
-                "type": "intent",
-                "data": {
-                    "action": "show_panel",
-                    "panel": "map",
-                    "data": {
-                        "center": {"lat": lat, "lng": lng},
-                        "constraints": constraints,
-                    },
-                },
-            }
-            await asyncio.sleep(0.1)
-        
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "evidence_snapshot", "data": {"constraints": constraints, "policy_count": len(constraints), "citations": citations}}}
-        await asyncio.sleep(0.1)
-        policies = db_search_policies(context.prompt, limit=6)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "applicable_policies", "data": {"policies": policies, "citations": citations}}}
+    # Phase 3B: Execute panel plan
+    for panel_name in panel_plan:
+        try:
+            panel_intent = await dispatch_panel(panel_name, context, citations)
+            
+            if panel_intent:
+                yield panel_intent
+                await asyncio.sleep(0.1)
+                
+                await write_trace(trace_path, TraceEntry(
+                    t=datetime.utcnow().isoformat(),
+                    step="emit_panel",
+                    module=context.module,
+                    output={"panel": panel_name}
+                ))
+        except Exception as e:
+            print(f"[Playbook] Failed to dispatch panel {panel_name}: {e}")
+            await write_trace(trace_path, TraceEntry(
+                t=datetime.utcnow().isoformat(),
+                step="panel_error",
+                module=context.module,
+                input={"panel": panel_name},
+                error=str(e)
+            ))
     
     # Phase 4: Streaming reasoning tokens (via LLM if available)
     sys_prompt = llm.build_system_prompt(context.module)
@@ -225,10 +150,12 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
 
     print(f"[Playbook] Starting LLM stream for module={context.module}")
     idx = 0
+    collected_tokens: List[str] = []
     try:
         async for piece in llm.stream_text(stitched):
             if not piece:
                 continue
+            collected_tokens.append(piece)
             yield {"type": "token", "data": {"token": piece, "index": idx}}
             idx += 1
         print(f"[Playbook] LLM stream complete, yielded {idx} tokens")
@@ -239,6 +166,48 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
         for i, token in enumerate(fallback.split()):
             yield {"type": "token", "data": {"token": token + " ", "index": i}}
             await asyncio.sleep(0.02)
+        collected_tokens = [fallback]
+
+    # Phase 4B: Convert collected reasoning into follow-up actions
+    try:
+        reasoning_text = "".join(collected_tokens)
+        if context.interactive_actions:
+            # Suggest actions; do not execute automatically
+            suggestions = extract_actions(reasoning_text, context.module)
+            await write_trace(trace_path, TraceEntry(
+                t=datetime.utcnow().isoformat(),
+                step="action_suggestions",
+                module=context.module,
+                output={"suggestions": [s.get("type") for s in suggestions]}
+            ))
+            yield {
+                "type": "intent",
+                "data": {
+                    "action": "status",
+                    "message": "Action suggestions available",
+                    "data": {"suggestions": suggestions}
+                }
+            }
+        else:
+            # Execute automatically when interactive mode is disabled
+            auto_intents = await run_auto_actions(reasoning_text, context, citations)
+            if auto_intents:
+                await write_trace(trace_path, TraceEntry(
+                    t=datetime.utcnow().isoformat(),
+                    step="auto_actions",
+                    module=context.module,
+                    output={"intents": len(auto_intents)}
+                ))
+            for intent in auto_intents:
+                yield intent
+                await asyncio.sleep(0.05)
+    except Exception as e:
+        await write_trace(trace_path, TraceEntry(
+            t=datetime.utcnow().isoformat(),
+            step="auto_actions_error",
+            module=context.module,
+            error=str(e)
+        ))
     
     # Phase 5: Final result
     yield {
@@ -255,34 +224,48 @@ def db_search_policies(query: str, limit: int = 6) -> List[Dict[str, Any]]:
     if not query:
         return results
     
-    # Use generated tsv column for better performance
-    # OR condition ensures we get results even if not all terms match
+    # Hybrid search with embedding (GPU-accelerated) + FTS
+    from modules.embedding import get_embedding
+    from db import to_vector
+    
+    q_emb = get_embedding(query)
     sql = """
-        SELECT p.doc_id, p.title, pp.text,
-               COALESCE(ts_rank_cd(pp.tsv, plainto_tsquery('english', %s)), 0) AS rank
+        SELECT p.doc_id,
+               p.title,
+               pp.text,
+               ts_rank_cd(pp.tsv, plainto_tsquery('english', %s)) AS rank_txt,
+               (1 - (pp.embedding <=> %s::vector)) AS rank_vec,
+               (0.6 * COALESCE(ts_rank_cd(pp.tsv, plainto_tsquery('english', %s)), 0) +
+                0.4 * COALESCE(1 - (pp.embedding <=> %s::vector), 0)) AS score
         FROM policy_para pp
         JOIN policy p ON p.id = pp.policy_id
-        WHERE pp.tsv @@ plainto_tsquery('english', %s) OR pp.embedding IS NOT NULL
-        ORDER BY rank DESC
+        WHERE (pp.tsv @@ plainto_tsquery('english', %s)) OR (pp.embedding IS NOT NULL)
+        ORDER BY score DESC
         LIMIT %s
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (query, query, limit))
-                for doc_id, title, text, rank in cur.fetchall():
-                    results.append({"id": str(doc_id), "title": title, "text": text, "relevance": float(rank), "source": title})
+                cur.execute(sql, (query, to_vector(q_emb), query, to_vector(q_emb), query, limit))
+                for doc_id, title, text, rank_txt, rank_vec, score in cur.fetchall():
+                    results.append({"id": str(doc_id), "title": title, "text": text, "relevance": float(score or 0.0), "source": title})
     except Exception as e:
-        # Fallback to ILIKE
-        like = f"%{query}%"
+        # Fallback to FTS-only if embeddings fail
+        print(f"[Playbook] Hybrid search failed, falling back to FTS: {e}")
+        sql2 = """
+            SELECT p.doc_id, p.title, pp.text,
+                   COALESCE(ts_rank_cd(pp.tsv, plainto_tsquery('english', %s)), 0) AS rank
+            FROM policy_para pp
+            JOIN policy p ON p.id = pp.policy_id
+            WHERE pp.tsv @@ plainto_tsquery('english', %s) OR pp.embedding IS NOT NULL
+            ORDER BY rank DESC
+            LIMIT %s
+        """
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT p.doc_id, p.title, pp.text FROM policy_para pp JOIN policy p ON p.id = pp.policy_id WHERE pp.text ILIKE %s LIMIT %s",
-                    (like, limit),
-                )
-                for doc_id, title, text in cur.fetchall():
-                    results.append({"id": str(doc_id), "title": title, "text": text, "relevance": 0.5, "source": title})
+                cur.execute(sql2, (query, query, limit))
+                for doc_id, title, text, rank in cur.fetchall():
+                    results.append({"id": str(doc_id), "title": title, "text": text, "relevance": float(rank), "source": title})
     return results
 
 def db_search_precedents(query: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -290,35 +273,110 @@ def db_search_precedents(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     if not query:
         return results
     
-    # Use generated tsv column
+    # Hybrid search with embedding (GPU-accelerated) + FTS
+    from modules.embedding import get_embedding
+    from db import to_vector
+    
+    q_emb = get_embedding(query)
     sql = """
         SELECT case_ref, decision, decision_date, summary,
-               ts_rank_cd(tsv, plainto_tsquery('english', %s)) AS rank
+               ts_rank_cd(tsv, plainto_tsquery('english', %s)) AS rank_txt,
+               (1 - (embedding <=> %s::vector)) AS rank_vec,
+               (0.6 * COALESCE(ts_rank_cd(tsv, plainto_tsquery('english', %s)), 0) +
+                0.4 * COALESCE(1 - (embedding <=> %s::vector), 0)) AS score
         FROM precedent
-        WHERE tsv @@ plainto_tsquery('english', %s)
-        ORDER BY rank DESC
+        WHERE (tsv @@ plainto_tsquery('english', %s)) OR (embedding IS NOT NULL)
+        ORDER BY score DESC
         LIMIT %s
     """
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (query, query, limit))
-                for case_ref, decision, decision_date, summary, rank in cur.fetchall():
+                cur.execute(sql, (query, to_vector(q_emb), query, to_vector(q_emb), query, limit))
+                for case_ref, decision, decision_date, summary, rank_txt, rank_vec, score in cur.fetchall():
                     results.append({
                         "case_ref": case_ref,
                         "decision": decision,
-                        "similarity": float(rank or 0.0),
+                        "similarity": float(score or 0.0),
                         "key_point": (summary or "")[:140],
                         "date": str(decision_date) if decision_date else None,
                     })
-    except Exception:
-        # Fallback to ILIKE
-        like = f"%{query}%"
+    except Exception as e:
+        # Fallback to FTS-only
+        print(f"[Playbook] Precedent hybrid search failed, falling back to FTS: {e}")
+        sql2 = """
+            SELECT case_ref, decision, decision_date, summary,
+                   ts_rank_cd(tsv, plainto_tsquery('english', %s)) AS rank
+            FROM precedent
+            WHERE tsv @@ plainto_tsquery('english', %s)
+            ORDER BY rank DESC
+            LIMIT %s
+        """
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT case_ref, decision, decision_date, summary FROM precedent WHERE summary ILIKE %s LIMIT %s", (like, limit))
-                for case_ref, decision, decision_date, summary in cur.fetchall():
-                    results.append({"case_ref": case_ref, "decision": decision, "similarity": 0.5, "key_point": (summary or "")[:140], "date": str(decision_date) if decision_date else None})
+                cur.execute(sql2, (query, query, limit))
+                for case_ref, decision, decision_date, summary, rank in cur.fetchall():
+                    results.append({"case_ref": case_ref, "decision": decision, "similarity": float(rank or 0.0), "key_point": (summary or "")[:140], "date": str(decision_date) if decision_date else None})
+    return results
+
+def db_search_evidence(query: str, topics: List[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """Search evidence base - internal function for reasoning flow."""
+    results: List[Dict[str, Any]] = []
+    if not query:
+        return results
+    
+    sql_parts = ["""
+        SELECT e.id, e.title, e.type, e.topic_tags, e.geographic_scope,
+               e.author, e.publisher, e.year, e.source_type, e.spatial_layer_ref,
+               e.key_findings, e.status, e.reliability_flags, e.notes,
+               COALESCE((SELECT COUNT(*) FROM evidence_version ev WHERE ev.evidence_id = e.id), 0) as version_count
+        FROM evidence e
+    """]
+    where_clauses = []
+    params = []
+    
+    # Simple text search on title and key_findings
+    where_clauses.append("(e.title ILIKE %s OR e.key_findings ILIKE %s)")
+    params.extend([f"%{query}%", f"%{query}%"])
+    
+    # Topic filter
+    if topics:
+        where_clauses.append("e.topic_tags && %s")
+        params.append(topics)
+    
+    if where_clauses:
+        sql_parts.append("WHERE " + " AND ".join(where_clauses))
+    
+    sql_parts.append("ORDER BY e.updated_at DESC LIMIT %s")
+    params.append(limit)
+    
+    sql = " ".join(sql_parts)
+    
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                for row in cur.fetchall():
+                    results.append({
+                        "id": row[0],
+                        "title": row[1],
+                        "type": row[2],
+                        "topic_tags": row[3] or [],
+                        "geographic_scope": row[4],
+                        "author": row[5],
+                        "publisher": row[6],
+                        "year": row[7],
+                        "source_type": row[8],
+                        "spatial_layer_ref": row[9],
+                        "key_findings": row[10],
+                        "status": row[11],
+                        "reliability_flags": row[12] or {},
+                        "notes": row[13],
+                        "version_count": row[14],
+                    })
+    except Exception as e:
+        print(f"[Playbook] Evidence search failed: {e}")
+    
     return results
 
 def db_constraints(context: ContextPack) -> List[Dict[str, Any]]:

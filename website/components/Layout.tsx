@@ -13,7 +13,7 @@ export function Layout({ children }: LayoutProps) {
   useThemeInstall();
   
   return (
-    <div style={{ background: "var(--surface)", color: "var(--muted)" }}>
+    <div style={{ background: "var(--surface)", color: "var(--muted)" }} className="min-h-screen">
       <div className="fixed inset-0 z-0 pointer-events-none">
         <AmbientNetwork />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_60%,_var(--surface)_95%)]" />
@@ -21,7 +21,7 @@ export function Layout({ children }: LayoutProps) {
       
       <div className="relative z-10 min-h-screen flex flex-col" style={{ scrollBehavior: "smooth" }}>
         <Header />
-        <main className="flex-grow">
+        <main className="flex-grow pb-24">
           {children}
         </main>
         <Footer />

@@ -21,6 +21,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "contracts/*": [
+        "../contracts/*"
       ]
     },
     "allowImportingTsExtensions": true,

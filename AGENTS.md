@@ -1,4 +1,126 @@
-# The Planner’s Assistant – Maximal Demo (Ubuntu 22.04, 2025)
+# Updated spec
+
+# 🧭 Purpose
+
+Evidence Base Mode should:
+
+1. **Centralise & classify** all evidence (docs, datasets, spatial layers).
+2. **Expose provenance** and version history for audit.
+3. **Cross-validate** assumptions across topics.
+4. **Feed** Policy, Scenario, and Spatial modes with traceable inputs.
+5. **Stay current** via proxy/cache refresh and uploads into the DB.
+
+---
+
+# 🔌 Sources & Ingestion (Proxy + Uploads)
+
+* **Search order (configurable):** `DB (canonical) → Proxy Cache (content-addressed) → Live Web (whitelisted)`.
+* **Uploads:** PDF/CSV/XLSX/ZIP/GeoPackage/Shapefile → ingested and **persisted into DB** (+ object store) with a new **evidence_version**.
+* **Proxy/cache rules:** domain whitelist (LPA, DLUHC, ONS, EA, etc.), robots-respecting, ETag/Last-Modified revalidation, license capture.
+* **De-dupe by hash**; originals stored in CAS; metadata & links stored in DB.
+
+---
+
+# 🗂️ Evidence Item Schema (per record)
+
+| Field                  | Description                           |
+| ---------------------- | ------------------------------------- |
+| `id`                   | Unique ID                             |
+| `title`                | Document/dataset name                 |
+| `type`                 | SHMA/HENA/SFRA/Viability/etc.         |
+| `topic_tags[]`         | housing, economy, transport, climate… |
+| `geographic_scope`     | LPA, sub-area, corridor               |
+| `author` / `publisher` | Consultancy/agency/LPA                |
+| `year`                 | Publication year                      |
+| `source_type`          | upload, cached_url, live_url          |
+| `spatial_layer_ref`    | PostGIS layer handle (if any)         |
+| `key_findings`         | short, structured summary             |
+| `policy_links[]`       | policy IDs relying on this            |
+| `status`               | draft/adopted/superseded              |
+| `reliability`          | currency/method flags                 |
+| `provenance`           | version lineage, CAS hash, URL, etag  |
+| `notes`                | officer/analyst notes                 |
+
+*(Plus internal tables for versions, text chunks, and spatial layers.)*
+
+---
+
+# 📚 What to Include (Evidence Types)
+
+**Strategic & Demographic:** HENA/SHMA, household projections, employment land, retail/town centre needs.
+**Environmental & Infrastructure:** SFRA, flood/EA layers, air quality, noise, contamination, climate baseline, utilities capacity, transport assessments/LTP links.
+**Spatial & Land:** SHELAA, brownfield register, Green Belt/landscape/heritage appraisals, settlement hierarchy, density/design typologies.
+**Social & Community:** health/education capacity, open space, cultural infra audits, EqIA.
+**Economic & Viability:** plan viability, CIL evidence, local industrial strategy inputs, employment forecasts.
+
+---
+
+# 🔍 Core Functions
+
+* **Unified Search & Filter:** topic, year, author, spatial flag, linked policy, freshness, publisher; scope toggle: **DB / DB+Cache / DB+Cache+Live**.
+* **Document Parsing:** OCR, text extraction, section/figure tables; CSV/XLSX profiled; Geo imports to PostGIS.
+* **Map Overlay:** view any attached spatial layers; bbox, SRID, feature count.
+* **Dependency Graph:** evidence ↔ policy links; show strength/rationale.
+* **Version Timeline:** superseded chains, diffs of key findings.
+* **Currency Alerts:** >5y old, method mismatch, superseded.
+* **Neighbour Benchmarking:** same-type studies from adjacent LPAs (whitelist).
+* **Evidence Gap Analysis:** policies with weak/stale/no evidence.
+
+---
+
+# 🧩 UI Panels (minimum)
+
+1. **Evidence Browser:** search, filters, scope toggle (DB/Cache/Live), badges (`LOCAL`, `CACHED`, `LIVE`).
+2. **Record View:** metadata, key findings, lineage, license, attachments, actions (*open, link to policy, pin cache*).
+3. **Map Tab:** spatial layer preview + layer metadata.
+4. **Dependencies:** policy links and DAG.
+5. **Gaps & Alerts:** currency/status dashboard with quick-fix actions (re-fetch, request update).
+6. **Upload/Add from URL:** drag-drop or URL via proxy → shows ingest steps and results.
+
+---
+
+# 🔁 Typical Workflows
+
+* **Add Evidence:** Upload file or Add URL → parse/OCR/import → create `evidence_version` → link to policies.
+* **Refresh from Source:** revalidate via proxy (ETag/Last-Modified) → auto-new version if changed.
+* **Use in Policy Drafting:** policy card shows linked evidence + freshness; add citations inline.
+* **Scenario Defaults:** pull parameters (growth, headroom, constraints) from selected evidence items.
+
+---
+
+# ✅ Quality & Governance
+
+* **Immutability:** versions are append-only; supersede rather than overwrite.
+* **Licensing:** capture and display license/attribution; block non-permitted reuse.
+* **Audit Trail:** who/when/what (upload/fetch/parse/link).
+* **Role-based Access:** upload/fetch vs read-only; admin GC of orphaned blobs only.
+
+---
+
+# 🔗 Integration Points
+
+* **Policy Mode:** per-policy “evidence basis” and inline citations.
+* **Scenario Mode:** parameter library sourced from evidence.
+* **Spatial Engine:** one-click layer overlay; constraints derived from evidence layers.
+* **Reasoning Engine:** retrieval from evidence chunks with provenance in outputs.
+
+---
+
+# 🧠 Minimal API (thin slice)
+
+* `POST /evidence/upload` (multipart)
+* `POST /evidence/fetch { url }` (proxy→cache→DB version)
+* `GET /evidence/search?q&topic&year&scope=db|cache|live&…`
+* `GET /evidence/{id}` (latest + lineage)
+* `POST /evidence/{id}/link-policy { policy_id, rationale, strength }`
+* `POST /evidence/{id}/enhance` (re-run OCR/ingest)
+* `GET /graph/dependencies?policy_id=…`
+
+---
+
+
+
+# The Planner’s Assistant – Maximal Old Demo (Ubuntu 22.04, 2025)
 
 ## 1. Vision
 
@@ -227,7 +349,7 @@ async def reason(req: ReasonRequest):
 DATABASE_URL=postgresql://tpa:tpa@127.0.0.1:5432/tpa
 LLM_PROVIDER=openai
 LLM_MODEL=gpt-5-turbo
-EMBED_MODEL=text-embedding-3-large
+EMBED_MODEL=qwen3-embedding:8b
 PROXY_BASE_URL=http://127.0.0.1:8082
 PROXY_INTERNAL_TOKEN=change-me-long-random
 ALLOW_ON_DEMAND_FETCH=true

@@ -8,8 +8,18 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 5173,
         host: '0.0.0.0',
+        fs: {
+          // Allow importing files from the monorepo root (../contracts, etc.)
+          allow: [
+            path.resolve(__dirname, '.'),
+            path.resolve(__dirname, '..'),
+          ],
+        },
       },
       plugins: [react()],
+      optimizeDeps: {
+        include: ['zod'],
+      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
@@ -17,6 +27,8 @@ export default defineConfig(({ mode }) => {
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
+          // Optional alias to simplify imports from shared contracts
+          'contracts': path.resolve(__dirname, '../contracts'),
         }
       }
     };

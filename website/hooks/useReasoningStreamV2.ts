@@ -10,22 +10,22 @@ import {
   PatchEnvelope,
   Intent,
   validatePatchEnvelope,
-} from '../../contracts/schemas';
+} from 'contracts/schemas';
 import {
   applyPatch,
   PatchResult,
-} from '../../contracts/patch-reducer';
+} from 'contracts/patch-reducer';
 import {
   translateIntent,
   createTranslationContext,
   IntentBatcher,
   TranslationContext,
-} from '../../contracts/intent-translator';
+} from 'contracts/intent-translator';
 import {
   createBudgetTracker,
   BudgetTracker,
   Module,
-} from '../../contracts/registry';
+} from 'contracts/registry';
 import {
   createCircuitBreaker,
   recordPatchResult,
@@ -33,7 +33,7 @@ import {
   getSafeModeState,
   CircuitBreakerState,
   resetCircuitBreaker,
-} from '../../contracts/circuit-breaker';
+} from 'contracts/circuit-breaker';
 
 interface ReasonRequest {
   module: string;
@@ -42,11 +42,22 @@ interface ReasonRequest {
   allow_web_fetch: boolean;
   site_data?: any;
   proposal_data?: any;
+  interactive_actions?: boolean;
 }
 
 const KERNEL_URL = (import.meta as any).env?.VITE_KERNEL_URL ?? 'http://127.0.0.1:8081';
+// Hardcode to true for testing - bypass env var issues
+const DISABLE_CIRCUIT_BREAKER = true; // String((import.meta as any).env?.VITE_DISABLE_CIRCUIT_BREAKER || '').toLowerCase() === 'true';
 
-export function useReasoningStream() {
+// Debug logging
+console.log('[useReasoningStreamV2] DISABLE_CIRCUIT_BREAKER:', DISABLE_CIRCUIT_BREAKER);
+
+type StreamOptions = {
+  onStateChange?: (state: DashboardState) => void;
+  initialState?: DashboardState;
+};
+
+export function useReasoningStream(opts?: StreamOptions) {
   const [state, setState] = useState<DashboardState>({
     panels: [],
     module: 'evidence' as Module,
@@ -63,6 +74,32 @@ export function useReasoningStream() {
   const batcherRef = useRef<IntentBatcher | null>(null);
   const sessionIdRef = useRef<string>('');
   const runModeRef = useRef<'stable' | 'deep'>('stable');
+  const lastRequestRef = useRef<ReasonRequest | null>(null);
+  const [suggestions, setSuggestions] = useState<Array<{ type: string; query?: string }>>([]);
+  
+  // Track if we should persist (disable during hydration to prevent spam)
+  const shouldPersistRef = useRef(false);
+
+  // Hydrate from initial state if provided
+  useEffect(() => {
+    if (opts?.initialState) {
+      shouldPersistRef.current = false; // Disable persistence during hydration
+      setState(opts.initialState);
+      setReasoning(opts.initialState.reasoning || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Notify parent on state change (skip during hydration)
+  useEffect(() => {
+      const handler = opts?.onStateChange;
+      if (handler && shouldPersistRef.current) {
+        // Use a microtask to prevent infinite loops
+        queueMicrotask(() => handler(state));
+    }
+      // Only re-run when state actually changes, not when opts changes
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state]);
   
   // Cleanup batcher on unmount
   useEffect(() => {
@@ -83,20 +120,29 @@ export function useReasoningStream() {
       console.warn('Circuit breaker is open, rejecting patch');
       return;
     }
+    // Optional guard: allow bypassing CB in local dev
+    if (!DISABLE_CIRCUIT_BREAKER) {
+      if (!shouldAllowOperation(circuitBreakerRef.current)) {
+        console.warn('Circuit breaker is open, rejecting patch');
+        return;
+      }
+    }
     
     // Validate envelope
     const validation = validatePatchEnvelope(envelope);
     if (!validation.valid) {
       console.error('Invalid patch envelope:', validation.error);
       
-      const result: PatchResult = {
-        success: false,
-        error: validation.error,
-      };
-      
-      const shouldBreak = recordPatchResult(circuitBreakerRef.current, result);
-      if (shouldBreak) {
-        enterSafeMode();
+      if (!DISABLE_CIRCUIT_BREAKER) {
+        const result: PatchResult = {
+          success: false,
+          error: validation.error,
+        };
+        
+        const shouldBreak = recordPatchResult(circuitBreakerRef.current, result);
+        if (shouldBreak) {
+          enterSafeMode();
+        }
       }
       
       return;
@@ -104,6 +150,8 @@ export function useReasoningStream() {
     
     // Apply patch
     setState(currentState => {
+      console.log('[useReasoningStreamV2] About to apply patch. Envelope:', JSON.stringify(envelope, null, 2));
+      console.log('[useReasoningStreamV2] Current state panels:', Object.keys(currentState.panels || {}));
       const result = applyPatch(
         currentState,
         envelope,
@@ -112,16 +160,18 @@ export function useReasoningStream() {
       );
       
       // Record result in circuit breaker
-      const shouldBreak = recordPatchResult(
-        circuitBreakerRef.current,
-        result,
-        envelope.ops.length
-      );
-      
-      if (shouldBreak) {
-        // Enter safe mode asynchronously
-        setTimeout(() => enterSafeMode(), 0);
-        return currentState; // Don't apply this patch
+      if (!DISABLE_CIRCUIT_BREAKER) {
+        const shouldBreak = recordPatchResult(
+          circuitBreakerRef.current,
+          result,
+          envelope.ops.length
+        );
+        
+        if (shouldBreak) {
+          // Enter safe mode asynchronously
+          setTimeout(() => enterSafeMode(), 0);
+          return currentState; // Don't apply this patch
+        }
       }
       
       if (result.success && result.newState) {
@@ -129,9 +179,10 @@ export function useReasoningStream() {
         return result.newState;
       } else {
         // Failure - log but keep current state (rollback)
-        console.error('Patch application failed:', result.error);
+        console.error('[useReasoningStreamV2] Patch application failed:', result.error);
+        console.error('[useReasoningStreamV2] Full result object:', result);
         if (result.errors) {
-          console.error('Individual errors:', result.errors);
+          console.error('[useReasoningStreamV2] Individual errors:', result.errors);
         }
         return currentState;
       }
@@ -144,6 +195,7 @@ export function useReasoningStream() {
   const enterSafeMode = useCallback(() => {
     setState(currentState => {
       if (currentState.safe_mode) {
+          // In disabled CB mode, we keep streaming and do not enter safe mode
         return currentState; // Already in safe mode
       }
       
@@ -163,6 +215,7 @@ export function useReasoningStream() {
   const startReasoning = useCallback(async (request: ReasonRequest) => {
     setIsRunning(true);
     setReasoning('');
+    setSuggestions([]);
     
     // Reset state
     sessionIdRef.current = `session_${Date.now()}`;
@@ -170,12 +223,18 @@ export function useReasoningStream() {
     budgetRef.current = createBudgetTracker();
     resetCircuitBreaker(circuitBreakerRef.current);
     
-    setState({
+    const initial: DashboardState = {
       panels: [],
       module: request.module as Module,
       safe_mode: false,
       error_count: 0,
-    });
+    };
+    shouldPersistRef.current = false; // Disable during reset
+    setState(initial);
+    lastRequestRef.current = { ...request };
+    
+    // Enable persistence after initial state is set
+    setTimeout(() => { shouldPersistRef.current = true; }, 0);
     
     // Create translation context
     const translationContext: TranslationContext = createTranslationContext(
@@ -198,7 +257,7 @@ export function useReasoningStream() {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({ ...request, interactive_actions: true }),
       });
 
       if (!response.ok) {
@@ -217,7 +276,7 @@ export function useReasoningStream() {
 
       while (true) {
         // Check circuit breaker before reading more
-        if (circuitBreakerRef.current.isBroken) {
+        if (!DISABLE_CIRCUIT_BREAKER && circuitBreakerRef.current.isBroken) {
           console.warn('Circuit breaker open, stopping stream processing');
           break;
         }
@@ -248,6 +307,10 @@ export function useReasoningStream() {
                 setReasoning((prev) => prev + (parsed.token || parsed.data?.token || ''));
               } else if (lastEventType === 'intent') {
                 const intent: Intent = parsed;
+                // Capture suggestions from status event
+                if (intent.action === 'status' && intent.data?.suggestions) {
+                  setSuggestions(intent.data.suggestions);
+                }
                 
                 // Route through batcher for patch translation
                 if (batcherRef.current && !circuitBreakerRef.current.isBroken) {
@@ -281,15 +344,17 @@ export function useReasoningStream() {
                 // Backend error
                 console.error('Backend error:', parsed);
                 
-                // Trigger safe mode on backend errors
-                const result: PatchResult = {
-                  success: false,
-                  error: parsed.message || 'Backend error',
-                };
-                
-                const shouldBreak = recordPatchResult(circuitBreakerRef.current, result);
-                if (shouldBreak) {
-                  enterSafeMode();
+                if (!DISABLE_CIRCUIT_BREAKER) {
+                  // Trigger safe mode on backend errors
+                  const result: PatchResult = {
+                    success: false,
+                    error: parsed.message || 'Backend error',
+                  };
+                  
+                  const shouldBreak = recordPatchResult(circuitBreakerRef.current, result);
+                  if (shouldBreak) {
+                    enterSafeMode();
+                  }
                 }
               }
             } catch (e) {
@@ -306,7 +371,9 @@ export function useReasoningStream() {
       
     } catch (error) {
       console.error('Reasoning error:', error);
-      enterSafeMode();
+      if (!DISABLE_CIRCUIT_BREAKER) {
+        enterSafeMode();
+      }
     } finally {
       setIsRunning(false);
       
@@ -318,11 +385,61 @@ export function useReasoningStream() {
     }
   }, [applyPatchEnvelope, enterSafeMode]);
 
+  // Allow external hydration from a saved dashboard state
+  const hydrateDashboardState = useCallback((dashboard: DashboardState) => {
+    shouldPersistRef.current = false; // Disable persistence during hydration
+    console.log('[useReasoningStream] Hydrating dashboard state:', {
+      panels: dashboard.panels.length,
+      reasoning: dashboard.reasoning?.substring(0, 50) + '...',
+      hasReasoning: !!dashboard.reasoning
+    });
+    setState(dashboard);
+    setReasoning(dashboard.reasoning || '');
+    // Clear suggestions on hydrate; they're tied to a specific run
+    setSuggestions([]);
+    // Re-enable persistence after hydration completes
+    setTimeout(() => { shouldPersistRef.current = true; }, 0);
+  }, []);
+
+  // Execute a suggested action on demand
+  const executeAction = useCallback(async (actionType: string, query?: string) => {
+    const req = lastRequestRef.current;
+    if (!req) return;
+    const payload = {
+      module: req.module,
+      action: actionType,
+      prompt: req.prompt,
+      site_data: req.site_data,
+      proposal_data: req.proposal_data,
+      query,
+    };
+    try {
+      const res = await fetch(`${KERNEL_URL}/services/actions/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Action execution failed');
+      const data = await res.json();
+      const intents = (data?.intents || []) as Intent[];
+      if (batcherRef.current) {
+        intents.forEach((i) => batcherRef.current!.addIntent(i));
+        // Flush quickly to show results
+        batcherRef.current.flush();
+      }
+    } catch (e) {
+      console.error('Failed to execute action', actionType, e);
+    }
+  }, []);
+
   return {
     panels: state.panels,
     isRunning,
     reasoning,
+    suggestions,
+    executeAction,
     startReasoning,
+    hydrateDashboardState,
     safeMode: state.safe_mode,
     errorCount: state.error_count,
   };

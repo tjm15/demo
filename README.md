@@ -165,7 +165,7 @@ curl -X POST http://127.0.0.1:8081/reason \
 - **Security-First Proxy**: Allow-listed retrieval with provenance tracking
 - **Module-Aware Citations**: Domain restrictions per reasoning context
 - **PostGIS Integration**: Spatial constraint analysis with EPSG:27700
-- **Vector Search**: pgvector embeddings for policy/precedent retrieval (all-MiniLM-L6-v2, 1024-d)
+- **Vector Search**: pgvector embeddings for policy/precedent retrieval (qwen3-embedding:8b via Ollama, 1024-d)
 - **Hybrid Search**: Combined text (BM25) + vector similarity for policy/precedent ranking
 - **Production UI**: Local Tailwind CSS build (no CDN) + Framer Motion animations
 - **E2E Testing**: Playwright tests for UI flows
@@ -226,7 +226,7 @@ Every fetched document is recorded in `source_provenance` table:
 python scripts/extract_paras.py fixtures/lpa_demo/policies/*.pdf
 
 # Compute embeddings
-python scripts/embed_paras.py --model text-embedding-3-large
+python scripts/embed_paras.py --model qwen3-embedding:8b
 
 # Load spatial layers (GeoPackage → PostGIS)
 bash scripts/import_layers.sh fixtures/lpa_demo/layers/*.gpkg

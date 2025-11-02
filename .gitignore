@@ -1,3 +1,49 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.history/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+.venv/
+venv/
+
+# Node / Frontend
+node_modules/
+website/node_modules/
+website/dist/
+website/.vite/
+dist/
+
+# Env / Secrets
+.env
+.env.local
+.env.*.local
+
+# Logs / Caches
+logs/
+apps/kernel/logs/
+apps/kernel/__pycache__/
+apps/proxy/__pycache__/
+apps/proxy/cache/
+logs/traces/
+*.log
+
+# Build artefacts
+*.egg-info/
+pip-wheel-metadata/
+
+# Playwright
+website/playwright-report/
+website/test-results/
 # Python
 __pycache__/
 *.py[cod]

@@ -3,27 +3,24 @@ Light Proxy Service for The Planner's Assistant
 Fetches, caches, and extracts policy documents with security controls.
 """
 import os
-import hashlib
-import json
+import re
 import gzip
+import time
+import json
+import hashlib
 import sqlite3
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from urllib.parse import urlparse, urljoin
-import re
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Header, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, HttpUrl
-import aiohttp
 from bs4 import BeautifulSoup
-import yaml
-import urllib.parse as urlp
-import time
 import urllib.robotparser as robotparser
-import psycopg
+import yaml
 import aiohttp
+import psycopg
 
 app = FastAPI(title="TPA Proxy Service")
 
@@ -34,9 +31,10 @@ CACHE_DIR = Path("cache")
 CACHE_DIR.mkdir(exist_ok=True)
 CACHE_DB = CACHE_DIR / "manifest.db"
 TIMEOUT_SECONDS = int(os.getenv("TIMEOUT_SECONDS", "60"))
+USER_AGENT = os.getenv("PROXY_USER_AGENT", "TPA-Proxy/1.0")
 
 # Initialize cache database
-def init_cache_db():
+def init_cache_db() -> None:
     conn = sqlite3.connect(CACHE_DB)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS cache_entries (
@@ -54,7 +52,7 @@ def init_cache_db():
 init_cache_db()
 
 # Load allowed sources
-def load_allowed_sources():
+def load_allowed_sources() -> Dict[str, Any]:
     if not Path(ALLOWED_SOURCES_PATH).exists():
         return {
             "schemes": ["https"],
@@ -108,7 +106,7 @@ async def robots_allowed(url: str, session: aiohttp.ClientSession) -> bool:
         return True
     rp = robotparser.RobotFileParser()
     rp.parse(text.splitlines())
-    return rp.can_fetch("TPA-Proxy", parsed.path)
+    return rp.can_fetch(USER_AGENT, parsed.path)
 
 # Models
 class SearchRequest(BaseModel):
@@ -242,7 +240,7 @@ async def download(req: DownloadRequest, _: None = Depends(verify_auth)):
         return {"cache_key": cache_key, "cached": True}
     
     # Download
-    async with aiohttp.ClientSession(headers={"User-Agent": "TPA-Proxy/1.0"}) as session:
+    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as session:
         # First, HEAD request for security check
         head_result = await guarded_head(url, session)
         if "error" in head_result:

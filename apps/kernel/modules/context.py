@@ -9,6 +9,8 @@ class ReasonRequest(BaseModel):
     proposal_data: Optional[Dict[str, Any]] = None
     run_mode: Literal["stable", "deep"] = "stable"
     allow_web_fetch: bool = False
+    # When true, kernel suggests actions and does NOT auto-execute them
+    interactive_actions: bool = True
 
 class ContextPack(BaseModel):
     """Context bundle for reasoning."""
@@ -18,6 +20,7 @@ class ContextPack(BaseModel):
     proposal_data: Optional[Dict[str, Any]] = None
     run_mode: str = "stable"
     allow_web_fetch: bool = False
+    interactive_actions: bool = True
     
     def get_tool_budget(self) -> int:
         """Get tool call budget based on run mode."""

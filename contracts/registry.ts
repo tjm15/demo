@@ -172,6 +172,46 @@ export const PANEL_REGISTRY: Record<string, PanelRegistryEntry> = {
     schemaKey: 'doc_viewer',
     weight: 1,
   },
+  
+  evidence_browser: {
+    name: 'Evidence Browser',
+    description: 'Search and filter evidence base items',
+    allowedModules: ['evidence'],
+    maxInstances: 1,
+    allowUpdates: true,
+    schemaKey: 'evidence_browser',
+    weight: 3,
+  },
+  
+  evidence_record: {
+    name: 'Evidence Record',
+    description: 'Detailed view of evidence item with versions and links',
+    allowedModules: ['evidence'],
+    maxInstances: 1,
+    allowUpdates: true,
+    schemaKey: 'evidence_record',
+    weight: 2,
+  },
+  
+  evidence_gaps: {
+    name: 'Evidence Gaps & Alerts',
+    description: 'Analysis of evidence gaps and currency issues',
+    allowedModules: ['evidence'],
+    maxInstances: 1,
+    allowUpdates: true,
+    schemaKey: 'evidence_gaps',
+    weight: 2,
+  },
+  
+  dependency_graph: {
+    name: 'Dependency Graph',
+    description: 'Visual graph of evidence-policy relationships',
+    allowedModules: ['evidence'],
+    maxInstances: 1,
+    allowUpdates: true,
+    schemaKey: 'dependency_graph',
+    weight: 3,
+  },
 };
 
 /**

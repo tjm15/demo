@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Settings, Sparkles, MapPin, X, Zap, Shield, ArrowLeft } from 'lucide-react';
+import { Play, Settings, Sparkles, MapPin, X, Zap, Shield, ArrowLeft, Upload } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,7 +8,13 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { PanelHost } from './PanelHost';
 import { ErrorBoundary } from './ErrorBoundary';
 import { RunControls } from './RunControls';
+import { AddEvidenceDialog, type AddEvidenceData } from './AddEvidenceDialog';
 import { useReasoningStream } from '../../hooks/useReasoningStream';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { LOCAL_AUTHORITIES } from '../../constants';
+import { useEffect, useCallback } from 'react';
+import { useWorkspaceState } from '../../hooks/useWorkspaceState';
+import type { DashboardState } from '../../../contracts/schemas';
 
 type Module = 'evidence' | 'policy' | 'strategy' | 'vision' | 'feedback' | 'dm';
 
@@ -57,21 +63,91 @@ export function AppWorkspace() {
   const [lat, setLat] = useState<string>('');
   const [lng, setLng] = useState<string>('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showAddEvidence, setShowAddEvidence] = useState(false);
   // Landing-page quick question (auto-classified)
   const [askText, setAskText] = useState('');
   
-  const { panels, isRunning, startReasoning, reasoning } = useReasoningStream();
+  const ws = useWorkspaceState();
+  
+    // Memoize the callback to prevent infinite loops
+    const handleStateChange = useCallback((st: DashboardState) => {
+      ws.updateState({
+        panels: st.panels,
+        safe_mode: st.safe_mode,
+        error_count: st.error_count,
+        prompt: st.prompt,
+        reasoning: st.reasoning,
+        timestamp: st.timestamp || Date.now(),
+      });
+    }, [ws.updateState]);
+  
+    const { panels, isRunning, startReasoning, reasoning, suggestions, executeAction, hydrateDashboardState } = useReasoningStream({
+      onStateChange: handleStateChange
+    });
+  
+  const { settings, setLocalAuthority } = useAppSettings();
+  const { switchModule: switchModuleWS, updateState: updateWS, resetModuleState, exportWorkspace, resetWorkspace, getModuleState } = ws;
 
   const handleModuleSelect = (moduleId: Module) => {
+    // Save current module state before switching
+    if (selectedModule) {
+      updateWS({
+        panels,
+        reasoning,
+        prompt,
+        safe_mode: false,
+        error_count: 0,
+        timestamp: Date.now(),
+      });
+    }
+    
     setSelectedModule(moduleId);
+    switchModuleWS(moduleId);
+    const mod = getModuleState(moduleId);
+    if (mod?.current) {
+      // Restore full dashboard state including reasoning
+      hydrateDashboardState(mod.current);
+      // Restore prompt from saved state
+      if (mod.current.prompt) {
+        setPrompt(mod.current.prompt);
+      } else {
+        setPrompt('');
+      }
+      // Restore site data if present
+      const siteData = (mod.current as any).site_data;
+      if (siteData?.lat && siteData?.lng) {
+        setLat(String(siteData.lat));
+        setLng(String(siteData.lng));
+        setShowSiteInput(true);
+      } else {
+        setLat('');
+        setLng('');
+        setShowSiteInput(false);
+      }
+    } else {
+      // Fresh state for module without history
+      hydrateDashboardState({ panels: [], module: moduleId, safe_mode: false, error_count: 0, timestamp: Date.now() });
+      setPrompt('');
+      setLat('');
+      setLng('');
+      setShowSiteInput(false);
+    }
   };
 
   const handleBack = () => {
+    // Save current module state before going back to menu
+    if (selectedModule) {
+      updateWS({
+        panels,
+        reasoning,
+        prompt,
+        safe_mode: false,
+        error_count: 0,
+        timestamp: Date.now(),
+      });
+    }
     setSelectedModule(null);
-    setPrompt('');
-    setLat('');
-    setLng('');
-    setShowSiteInput(false);
+    // Don't clear prompt - it will be restored when returning to this module
   };
 
   // Heuristic auto-classifier to route question to the best module
@@ -114,25 +190,67 @@ export function AppWorkspace() {
       prompt: q,
       run_mode: runMode,
       allow_web_fetch: allowWebFetch,
-      site_data: (autoModule === 'evidence' || autoModule === 'dm') && coords ? coords : undefined,
+      site_data: {
+        ...( (autoModule === 'evidence' || autoModule === 'dm') && coords ? coords : {}),
+        ...(settings.localAuthority ? { local_authority: settings.localAuthority.code } : {}),
+      },
     });
     setAskText('');
   };
 
   const handleRun = () => {
     if (!prompt.trim() || !selectedModule) return;
-    const site = (lat && lng) ? { lat: parseFloat(lat), lng: parseFloat(lng) } : undefined;
+    const site = {
+      ...( (lat && lng) ? { lat: parseFloat(lat), lng: parseFloat(lng) } : {}),
+      ...(settings.localAuthority ? { local_authority: settings.localAuthority.code } : {}),
+    };
     startReasoning({
       module: selectedModule,
       prompt,
       run_mode: runMode,
       allow_web_fetch: allowWebFetch,
-      site_data: site,
+      site_data: Object.keys(site).length ? site : undefined,
     });
+    // Record prompt in workspace state
+    updateWS({ prompt });
   };
 
   const handleExampleClick = (example: string) => {
     setPrompt(example);
+  };
+
+  const handleAddEvidence = async (data: AddEvidenceData) => {
+    console.log('Adding evidence:', data);
+    
+    // TODO: Implement actual upload/fetch logic
+    // For now, just show a success message
+    // This would call POST /evidence/upload or POST /evidence/fetch
+    
+    const formData = new FormData();
+    if (data.method === 'upload' && data.file) {
+      formData.append('file', data.file);
+    } else if (data.method === 'url' && data.url) {
+      formData.append('url', data.url);
+    }
+    formData.append('title', data.title);
+    formData.append('type', data.type);
+    formData.append('topic_tags', JSON.stringify(data.topicTags));
+    if (data.author) formData.append('author', data.author);
+    if (data.publisher) formData.append('publisher', data.publisher);
+    if (data.year) formData.append('year', data.year.toString());
+    if (data.notes) formData.append('notes', data.notes);
+    
+    try {
+      // Placeholder: would actually POST to backend
+      console.log('Would upload to /evidence/upload or /evidence/fetch');
+      
+      // Refresh evidence browser if it's visible
+      if (selectedModule === 'evidence') {
+        setPrompt(`Show evidence items including ${data.title}`);
+      }
+    } catch (error) {
+      console.error('Failed to add evidence:', error);
+    }
   };
 
   const currentModule = selectedModule ? MODULES.find(m => m.id === selectedModule)! : null;
@@ -266,6 +384,21 @@ export function AppWorkspace() {
                         </AnimatePresence>
                       </div>
                     )}
+                    {selectedModule === 'evidence' && (
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <button
+                          onClick={() => setShowAddEvidence(true)}
+                          disabled={isRunning}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-purple-600 text-white font-medium shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                        >
+                          <Upload className="w-4 h-4" />
+                          Add Evidence Item
+                        </button>
+                        <p className="text-xs text-slate-500 mt-2 text-center">
+                          Upload a file or provide a URL to add to the evidence base
+                        </p>
+                      </div>
+                    )}
                     <button onClick={handleRun} disabled={isRunning || !prompt.trim()} className="w-full mt-4 px-6 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-teal-600 text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
                       {isRunning ? (
                         <>
@@ -299,6 +432,23 @@ export function AppWorkspace() {
                               </button>
                             </div>
                           </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-700 mb-2 mt-3">Local Authority</label>
+                            <select
+                              className="w-full px-3 py-2 rounded-lg border-2 border-slate-200 text-sm"
+                              value={settings.localAuthority?.code || ''}
+                              onChange={(e) => {
+                                const code = e.target.value;
+                                setLocalAuthority(LOCAL_AUTHORITIES.find(a => a.code === code));
+                              }}
+                              disabled={isRunning}
+                            >
+                              <option value="">Select authority…</option>
+                              {LOCAL_AUTHORITIES.map(la => (
+                                <option key={la.code} value={la.code}>{la.name}</option>
+                              ))}
+                            </select>
+                          </div>
                           <div className="flex items-center justify-between">
                             <label className="text-xs font-medium text-slate-700">Allow Web Fetch</label>
                             <button onClick={() => setAllowWebFetch(!allowWebFetch)} disabled={isRunning} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${allowWebFetch ? 'bg-teal-500' : 'bg-slate-300'}`}>
@@ -309,13 +459,40 @@ export function AppWorkspace() {
                       </motion.div>
                     )}
                   </AnimatePresence>
+                </div>
+                <div className="lg:col-span-2 space-y-4">
+                  <ErrorBoundary>
+                    <PanelHost panels={panels} module={selectedModule} />
+                  </ErrorBoundary>
+                  {suggestions && suggestions.length > 0 && (
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Suggested next steps</h3>
+                        <span className="text-xs text-slate-500">Interactive</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {suggestions.map((s, idx) => (
+                          <button
+                            key={`${s.type}-${idx}`}
+                            onClick={() => executeAction(s.type, s.query)}
+                            disabled={isRunning}
+                            className="px-3 py-1.5 text-xs rounded-full border border-slate-300 hover:border-teal-500 hover:bg-teal-50 text-slate-700"
+                            title={s.query || ''}
+                          >
+                            {s.type.replace('.', ' → ')}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                  
                   {reasoning && (
                     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
                       <div className="flex items-center gap-2 mb-3">
                         <Sparkles className="w-4 h-4 text-teal-600" />
                         <h3 className="text-sm font-semibold text-slate-900">AI Reasoning</h3>
                       </div>
-                      <div className="prose prose-sm prose-slate max-w-none text-slate-600 leading-relaxed max-h-64 overflow-y-auto">
+                      <div className="prose prose-sm prose-slate max-w-none text-slate-600 leading-relaxed max-h-96 overflow-y-auto">
                         <ReactMarkdown 
                           remarkPlugins={[remarkGfm]}
                           components={{
@@ -336,6 +513,9 @@ export function AppWorkspace() {
                                 </code>
                               );
                             },
+                            br() {
+                              return <><br /></>;
+                            },
                           }}
                         >
                           {reasoning}
@@ -344,16 +524,18 @@ export function AppWorkspace() {
                     </motion.div>
                   )}
                 </div>
-                <div className="lg:col-span-2">
-                  <ErrorBoundary>
-                    <PanelHost panels={panels} module={selectedModule} />
-                  </ErrorBoundary>
-                </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+      
+      {/* Add Evidence Dialog */}
+      <AddEvidenceDialog
+        isOpen={showAddEvidence}
+        onClose={() => setShowAddEvidence(false)}
+        onAdd={handleAddEvidence}
+      />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import { ChevronDown } from 'lucide-react';
 
 import { CredibilityStrip } from '../components/CredibilityStrip';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { LOCAL_AUTHORITIES } from '../constants';
 import { FoundationsContent } from './content/FoundationsContent';
 import { PillarsContent } from './content/PillarsContent';
 import { ArchitectureContent } from './content/ArchitectureContent';
@@ -111,6 +113,7 @@ const MobileInfoSection = () => {
 
 export function HomePage() {
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  const { settings, setLocalAuthority } = useAppSettings();
 
   return (
     <motion.div
@@ -129,7 +132,31 @@ export function HomePage() {
               <p className="mt-6 max-w-prose">
                 An open-source environment for spatial planning — built to restore coherence, capacity, and trust in how decisions about place are made. It brings evidence, policy, and spatial data into one workspace, helping officers and policy teams reason clearly across strategy and development management. Designed for use inside government, it strengthens professional judgement rather than replacing it: supporting day-to-day casework, adaptive plan-making, and a transparent link between national policy, local plans, and individual decisions.
               </p>
-              <div className="mt-8">
+              <div className="mt-6 rounded-2xl bg-[color:var(--panel)] border border-[color:var(--edge)] p-4">
+                <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                  <label htmlFor="la-select" className="text-sm font-medium text-[color:var(--ink)]">Local Authority</label>
+                  <select
+                    id="la-select"
+                    className="max-w-md px-3 py-2 rounded-lg border border-[color:var(--edge)] text-sm"
+                    value={settings.localAuthority?.code || ''}
+                    onChange={(e) => {
+                      const code = e.target.value;
+                      const la = LOCAL_AUTHORITIES.find(a => a.code === code);
+                      setLocalAuthority(la);
+                    }}
+                  >
+                    <option value="">Select your authority…</option>
+                    {LOCAL_AUTHORITIES.map((la) => (
+                      <option key={la.code} value={la.code}>{la.name}</option>
+                    ))}
+                  </select>
+                  {settings.localAuthority && (
+                    <span className="text-xs text-[color:var(--muted)]">Using: {settings.localAuthority.name}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6">
                   {isDesktop ? (
                     <div className="flex flex-wrap items-center gap-4">
                       <Link to="/app" className="px-5 py-3 rounded-2xl bg-[color:var(--accent)] text-white font-medium shadow-md hover:shadow-lg focus:outline-none focus:[box-shadow:var(--ring)] transition-shadow">Demo</Link>

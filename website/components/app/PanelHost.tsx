@@ -11,8 +11,12 @@ import { ScenarioCompare } from './panels/ScenarioCompare';
 import { VisualCompliance } from './panels/VisualCompliance';
 import { ConsultationThemes } from './panels/ConsultationThemes';
 import { EvidenceSnapshot } from './panels/EvidenceSnapshot';
+import { EvidenceBrowser } from './panels/EvidenceBrowser';
+import { EvidenceRecord } from './panels/EvidenceRecord';
+import { EvidenceGaps } from './panels/EvidenceGaps';
+import { DependencyGraph } from './panels/DependencyGraph';
 import { MapPanel } from './panels/MapPanel';
-import { MapView } from './panels/MapView';
+// Note: MapView is unused here; MapPanel handles map rendering when present.
 import { DocViewer } from './panels/DocViewer';
 import { SafeModeNotice } from './panels/SafeModeNotice';
 
@@ -40,6 +44,10 @@ const PANEL_COMPONENTS: Record<string, React.FC<{ data: any }>> = {
   visual_compliance: VisualCompliance,
   consultation_themes: ConsultationThemes,
   evidence_snapshot: EvidenceSnapshot,
+  evidence_browser: EvidenceBrowser,
+  evidence_record: EvidenceRecord,
+  evidence_gaps: EvidenceGaps,
+  dependency_graph: DependencyGraph,
   map: MapPanel,
   doc_viewer: DocViewer,
   safe_mode_notice: SafeModeNotice,
