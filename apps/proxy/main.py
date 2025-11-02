@@ -23,6 +23,7 @@ import urllib.parse as urlp
 import time
 import urllib.robotparser as robotparser
 import psycopg
+import aiohttp
 
 app = FastAPI(title="TPA Proxy Service")
 
@@ -70,6 +71,7 @@ ALLOWED_SOURCES = load_allowed_sources()
 
 # Database (for provenance)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://tpa:tpa@127.0.0.1:5432/tpa")
+KERNEL_BASE_URL = os.getenv("KERNEL_BASE_URL", "http://127.0.0.1:8081")
 
 def db_conn():
     return psycopg.connect(DATABASE_URL)
@@ -120,6 +122,9 @@ class ExtractRequest(BaseModel):
 
 class IngestRequest(BaseModel):
     paras: List[Dict[str, Any]]
+    source_url: Optional[str] = None
+    title: Optional[str] = None
+    sha256: Optional[str] = None
 
 class SourceCheck(BaseModel):
     allowed: bool
@@ -365,10 +370,28 @@ async def extract(req: ExtractRequest, _: None = Depends(verify_auth)):
 
 @app.post("/ingest")
 async def ingest(req: IngestRequest, _: None = Depends(verify_auth)):
-    """Forward paragraphs to kernel for ingestion (placeholder)."""
-    # In production, this would call kernel's ingest endpoint
-    # Provenance bump (count of ingested paras for last download not tracked here)
-    return {"ingested": len(req.paras), "message": "Paragraphs queued for ingestion"}
+    """Forward paragraphs to kernel for ingestion."""
+    kernel_url = os.getenv("KERNEL_BASE_URL", "http://127.0.0.1:8081")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{kernel_url}/services/ingest/paras",
+                json={
+                    "source_url": "http://example.com/placeholder",
+                    "title": "Ingested Document",
+                    "paragraphs": [{"text": p.get("text", ""), "page": p.get("page")} for p in req.paras]
+                },
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status >= 400:
+                    detail = await resp.text()
+                    raise HTTPException(status_code=resp.status, detail=f"Kernel ingest failed: {detail}")
+                data = await resp.json()
+                return {"ingested": data.get("inserted", len(req.paras)), "policy_id": data.get("policy_id")}
+    except aiohttp.ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Kernel unreachable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingest forward failed: {e}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -6,6 +6,8 @@ from datetime import datetime
 
 from modules.context import ContextPack
 from modules.trace import TraceEntry, write_trace
+from modules import llm
+from modules import proxy_client
 from db import get_conn
 
 # Module-specific allowed domains for citations
@@ -39,6 +41,49 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
         module=context.module,
         input={"prompt": context.prompt}
     ))
+
+    # Try on-demand web retrieval via proxy within per-run cap
+    citations: List[Dict[str, Any]] = []
+    web_limit = context.get_web_fetch_limit()
+    if web_limit > 0:
+        try:
+            results = await proxy_client.proxy_search(context.prompt)
+            for r in results:
+                if len(citations) >= web_limit:
+                    break
+                url = r.get("url")
+                if not url:
+                    continue
+                dom = proxy_client.domain_from_url(url)
+                if not _domain_allowed(dom, context.module):
+                    await write_trace(trace_path, TraceEntry(
+                        t=datetime.utcnow().isoformat(),
+                        step="citation_suppressed",
+                        module=context.module,
+                        input={"url": url, "domain": dom},
+                        output={"reason": "domain not allowed for module"}
+                    ))
+                    continue
+                dl = await proxy_client.proxy_download(url)
+                cache_key = dl.get("cache_key")
+                if not cache_key:
+                    continue
+                ex = await proxy_client.proxy_extract(cache_key)
+                paras = ex.get("paragraphs", [])
+                snippet = (paras[0].get("text") if paras else r.get("snippet")) or ""
+                citations.append({
+                    "title": r.get("title") or dom,
+                    "url": url,
+                    "domain": dom,
+                    "snippet": snippet[:240],
+                })
+        except Exception as e:
+            await write_trace(trace_path, TraceEntry(
+                t=datetime.utcnow().isoformat(),
+                step="proxy_error",
+                module=context.module,
+                error=str(e)
+            ))
     
     # Initial panel hint
     yield {
@@ -76,7 +121,7 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
             "data": {
                 "action": "show_panel",
                 "panel": "applicable_policies",
-                "data": {"policies": policies},
+                "data": {"policies": policies, "citations": citations},
             },
         }
         await asyncio.sleep(0.1)
@@ -168,19 +213,32 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
             }
             await asyncio.sleep(0.1)
         
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "evidence_snapshot", "data": {"constraints": constraints, "policy_count": len(constraints)}}}
+        yield {"type": "intent", "data": {"action": "show_panel", "panel": "evidence_snapshot", "data": {"constraints": constraints, "policy_count": len(constraints), "citations": citations}}}
         await asyncio.sleep(0.1)
         policies = db_search_policies(context.prompt, limit=6)
-        yield {"type": "intent", "data": {"action": "show_panel", "panel": "applicable_policies", "data": {"policies": policies}}}
+        yield {"type": "intent", "data": {"action": "show_panel", "panel": "applicable_policies", "data": {"policies": policies, "citations": citations}}}
     
-    # Phase 4: Streaming reasoning tokens
-    reasoning_text = generate_reasoning_text(context)
-    for i, token in enumerate(reasoning_text.split()):
-        yield {
-            "type": "token",
-            "data": {"token": token + " ", "index": i}
-        }
-        await asyncio.sleep(0.02)
+    # Phase 4: Streaming reasoning tokens (via LLM if available)
+    sys_prompt = llm.build_system_prompt(context.module)
+    usr_prompt = llm.build_user_prompt(context.module, context.prompt, context.site_data, context.proposal_data)
+    stitched = f"SYSTEM:\n{sys_prompt}\n\nUSER:\n{usr_prompt}"
+
+    print(f"[Playbook] Starting LLM stream for module={context.module}")
+    idx = 0
+    try:
+        async for piece in llm.stream_text(stitched):
+            if not piece:
+                continue
+            yield {"type": "token", "data": {"token": piece, "index": idx}}
+            idx += 1
+        print(f"[Playbook] LLM stream complete, yielded {idx} tokens")
+    except Exception as e:
+        print(f"[Playbook] LLM stream failed: {e}")
+        # Fallback to static text if streaming fails
+        fallback = generate_reasoning_text(context)
+        for i, token in enumerate(fallback.split()):
+            yield {"type": "token", "data": {"token": token + " ", "index": i}}
+            await asyncio.sleep(0.02)
     
     # Phase 5: Final result
     yield {
@@ -343,3 +401,12 @@ def generate_reasoning_text(context: ContextPack) -> str:
     }
     
     return templates.get(context.module, "Analysis in progress...")
+
+
+def _domain_allowed(domain: str, module: str) -> bool:
+    domain = (domain or "").lower()
+    allowed = ALLOWED_BY_MODULE.get(module, [])
+    for d in allowed:
+        if domain == d or domain.endswith("." + d):
+            return True
+    return False

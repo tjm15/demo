@@ -37,7 +37,8 @@ app.add_middleware(
 )
 
 # Configuration
-LOG_DIR = Path(os.getenv("LOG_DIR", "/tmp/tpa/traces"))
+# Default to local logs directory for dev; can override with LOG_DIR env var
+LOG_DIR = Path(os.getenv("LOG_DIR", "./logs/traces"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Health check
@@ -97,6 +98,8 @@ async def reason(req: ReasonRequest):
 
 # Service endpoints (called by playbook tools)
 from services import policy, docs, spatial, precedent, standards, feedback, classify
+from services import files as files_service
+from services import ingest as ingest_service
 
 app.include_router(policy.router, prefix="/services/policy", tags=["policy"])
 app.include_router(docs.router, prefix="/services/docs", tags=["docs"])
@@ -105,6 +108,8 @@ app.include_router(precedent.router, prefix="/services/precedent", tags=["preced
 app.include_router(standards.router, prefix="/services/standards", tags=["standards"])
 app.include_router(feedback.router, prefix="/services/feedback", tags=["feedback"])
 app.include_router(classify.router, prefix="/services", tags=["classify"])
+app.include_router(files_service.router, prefix="/services/files", tags=["files"])
+app.include_router(ingest_service.router, prefix="/services/ingest", tags=["ingest"])
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Settings, Sparkles, MapPin, X, Zap, Shield, ArrowLeft } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { PanelHost } from './PanelHost';
 import { ErrorBoundary } from './ErrorBoundary';
 import { RunControls } from './RunControls';
@@ -311,7 +315,32 @@ export function AppWorkspace() {
                         <Sparkles className="w-4 h-4 text-teal-600" />
                         <h3 className="text-sm font-semibold text-slate-900">AI Reasoning</h3>
                       </div>
-                      <div className="text-sm text-slate-600 leading-relaxed max-h-64 overflow-y-auto">{reasoning}</div>
+                      <div className="prose prose-sm prose-slate max-w-none text-slate-600 leading-relaxed max-h-64 overflow-y-auto">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code({ node, inline, className, children, ...props }: any) {
+                              const match = /language-(\w+)/.exec(className || '');
+                              return !inline && match ? (
+                                <SyntaxHighlighter
+                                  style={vscDarkPlus}
+                                  language={match[1]}
+                                  PreTag="div"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            },
+                          }}
+                        >
+                          {reasoning}
+                        </ReactMarkdown>
+                      </div>
                     </motion.div>
                   )}
                 </div>

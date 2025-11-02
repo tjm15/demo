@@ -1,5 +1,6 @@
 import React from 'react';
 import { MapPin, Layers } from 'lucide-react';
+import { GeoChipList } from '../GeoChipList';
 
 interface Constraint {
   type: string;
@@ -7,10 +8,18 @@ interface Constraint {
   impact: 'high' | 'moderate' | 'low';
 }
 
+interface Citation {
+  title: string;
+  url: string;
+  domain: string;
+  snippet?: string;
+}
+
 interface EvidenceSnapshotProps {
   data: {
     constraints: Constraint[];
     policy_count: number;
+    citations?: Citation[];
   };
 }
 
@@ -23,6 +32,7 @@ const IMPACT_CONFIG = {
 export function EvidenceSnapshot({ data }: EvidenceSnapshotProps) {
   const constraints = data?.constraints || [];
   const policyCount = typeof data?.policy_count === 'number' ? data.policy_count : 0;
+  const citations = data?.citations || [];
   return (
     <div className="bg-[color:var(--panel)] rounded-xl border border-[color:var(--edge)] shadow-sm p-6">
       <div className="flex items-center gap-2 mb-4">
@@ -38,32 +48,34 @@ export function EvidenceSnapshot({ data }: EvidenceSnapshotProps) {
         </div>
       </div>
 
-      <h4 className="text-sm font-semibold text-[color:var(--ink)] mb-3">Site Constraints</h4>
-      <div className="space-y-2">
-        {constraints.map((constraint, idx) => {
-          const config = IMPACT_CONFIG[constraint.impact];
-
-          return (
-            <div
-              key={idx}
-              className="p-3 rounded-lg bg-[color:var(--surface)] border border-[color:var(--edge)] flex items-center justify-between"
-            >
-              <div>
-                <div className="text-sm font-medium text-[color:var(--ink)]">
-                  {constraint.type}
-                </div>
-                <div className="text-xs text-[color:var(--muted)]">{constraint.name}</div>
-              </div>
-              <span
-                className="px-2 py-1 rounded text-xs font-medium"
-                style={{ backgroundColor: config.color + '20', color: config.color }}
+      {citations.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-[color:var(--ink)] mb-2">Citations</div>
+          <div className="flex flex-wrap gap-2">
+            {citations.map((c, i) => (
+              <a
+                key={i}
+                href={c.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border border-[color:var(--edge)] bg-[color:var(--surface)] text-[color:var(--ink)] hover:border-[color:var(--accent)] hover:text-[color:var(--accent)] text-xs"
+                title={c.snippet || c.title}
               >
-                {config.label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+                <span className="px-1 py-0.5 rounded bg-[color:var(--accent)]/10 text-[color:var(--accent)] font-mono text-[10px]">{c.domain}</span>
+                <span className="truncate max-w-[200px]">{c.title}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <h4 className="text-sm font-semibold text-[color:var(--ink)] mb-3">Site Constraints</h4>
+      <GeoChipList
+        items={constraints.map((c) => ({
+          label: `${c.type}: ${c.name}`,
+          impact: c.impact,
+        }))}
+      />
     </div>
   );
 }

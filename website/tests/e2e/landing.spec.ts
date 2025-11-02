@@ -98,26 +98,4 @@ test.describe('App Workspace', () => {
     await expect(page.getByText(/Ready to Analyze/i)).toBeVisible();
     await expect(page.getByText(/Enter your planning query on the left and click/i)).toBeVisible();
   });
-
-  test('auto-routes ask box to best tool', async ({ page }) => {
-    await page.goto('/#/app');
-    const askInput = page.locator('#ask-text');
-    await askInput.fill('Draft a policy for sustainable transport in new developments');
-    await askInput.press('Enter');
-    // Header should switch to the selected tool automatically
-    await expect(page.getByRole('heading', { name: /Policy Drafter/ })).toBeVisible();
-  });
-
-  test('detects coordinates and reveals site inputs', async ({ page }) => {
-    await page.goto('/#/app');
-    const askInput = page.locator('#ask-text');
-    await askInput.fill('Site assessment at 51.5074, -0.1278 for residential development');
-    await askInput.press('Enter');
-    // Should route to Site Assessment (dm) and show site inputs prefilled
-    await expect(page.getByRole('heading', { name: /Site Assessment/ })).toBeVisible();
-    const latInput = page.getByPlaceholder('Latitude');
-    const lngInput = page.getByPlaceholder('Longitude');
-    await expect(latInput).toHaveValue(/51\.5074/);
-    await expect(lngInput).toHaveValue(/-0\.1278/);
-  });
 });

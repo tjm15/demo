@@ -13,6 +13,7 @@ import { ConsultationThemes } from './panels/ConsultationThemes';
 import { EvidenceSnapshot } from './panels/EvidenceSnapshot';
 import { MapPanel } from './panels/MapPanel';
 import { MapView } from './panels/MapView';
+import { DocViewer } from './panels/DocViewer';
 
 export interface PanelData {
   id: string;
@@ -39,6 +40,7 @@ const PANEL_COMPONENTS: Record<string, React.FC<{ data: any }>> = {
   consultation_themes: ConsultationThemes,
   evidence_snapshot: EvidenceSnapshot,
   map: MapPanel,
+  doc_viewer: DocViewer,
 };
 
 export function PanelHost({ panels, module }: PanelHostProps) {
