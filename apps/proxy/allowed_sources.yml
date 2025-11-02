@@ -1,0 +1,27 @@
+# Allowed sources for proxy retrieval
+# All outbound requests must match these rules
+
+schemes:
+  - https
+
+domains:
+  - www.gov.uk
+  - gov.uk
+  - www.london.gov.uk
+  - london.gov.uk
+  - www.planningportal.co.uk
+  - planningportal.co.uk
+  - acp.planninginspectorate.gov.uk
+  - www.planninginspectorate.gov.uk
+
+paths_regex:
+  - ".*"  # Allow all paths for now
+
+content_types:
+  - application/pdf
+  - text/html
+  - text/plain
+
+max_bytes: 10485760  # 10MB
+
+disallowed_query_keys: []

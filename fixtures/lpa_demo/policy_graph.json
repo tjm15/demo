@@ -1,0 +1,32 @@
+{
+  "policies": [
+    {
+      "id": "SP1",
+      "title": "Spatial Strategy",
+      "references": ["NPPF-12", "LP-GG1"],
+      "referenced_by": ["H1", "DM3"],
+      "exceptions": ["Rural exception sites"],
+      "tests": [
+        {"name": "density", "operator": ">=", "value": 35, "unit": "dph"}
+      ]
+    },
+    {
+      "id": "H1",
+      "title": "Housing Delivery",
+      "references": ["SP1", "LP-H1"],
+      "referenced_by": ["DM15"],
+      "exceptions": [],
+      "tests": [
+        {"name": "affordable_pct", "operator": ">=", "value": 35, "unit": "%"}
+      ]
+    },
+    {
+      "id": "DM3",
+      "title": "Design Quality",
+      "references": ["SP1", "NPPF-130"],
+      "referenced_by": ["DM15", "DM20"],
+      "exceptions": [],
+      "tests": []
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+Copyright (C) 2025 The Planner's Assistant Contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+================================================================================
+FULL LICENSE TEXT
+================================================================================
+
+For the complete text of the GNU Affero General Public License v3.0, see:
+https://www.gnu.org/licenses/agpl-3.0.txt
+
+================================================================================
+WHY AGPL-3.0?
+================================================================================
+
+The Planner's Assistant is licensed under AGPLv3 to ensure:
+
+1. **Network Copyleft Protection**
+   - Any modified version deployed as a web service MUST make source code 
+     available to users
+   - Prevents "SaaS loophole" where modifications are hidden behind APIs
+   - Critical for public sector transparency and accountability
+
+2. **Public Sector Alignment**
+   - Planning decisions affect communities and must be auditable
+   - Local Planning Authorities need to inspect and verify reasoning logic
+   - Citizens have the right to understand automated planning recommendations
+
+3. **Collaborative Improvement**
+   - Forces commercial derivatives to contribute improvements back
+   - Prevents proprietary forks that fragment the planning ecosystem
+   - Encourages shared investment in public infrastructure
+
+4. **Research & Academia**
+   - Universities and research institutions can freely use, modify, and deploy
+   - Published research must include reproducible source code
+   - Supports open science in urban planning and AI-assisted governance
+
+5. **Data Sovereignty**
+   - Local authorities retain control over their planning data and policy logic
+   - No vendor lock-in through proprietary extensions
+   - Enables federated networks of planning authorities sharing improvements
+
+================================================================================
+WHAT THIS MEANS FOR YOU
+================================================================================
+
+✅ You CAN:
+- Use this software for any purpose (commercial or non-commercial)
+- Study and modify the source code
+- Deploy it internally within your organization
+- Deploy it as a public web service (with source disclosure)
+- Integrate it with proprietary systems via standard APIs
+
+❌ You CANNOT:
+- Deploy modified versions as a web service without making source available
+- Relicense the code under more permissive terms (e.g., MIT, Apache)
+- Remove copyright notices or license headers
+- Use trademarks without permission
+
+🔄 You MUST:
+- Provide source code to all network users of your modified version
+- Preserve all copyright and license notices
+- Document your changes clearly
+- License your modifications under AGPLv3
+- Include installation instructions
+
+================================================================================
+COMMERCIAL USE
+================================================================================
+
+AGPLv3 does NOT prohibit commercial use. You can:
+- Charge for hosting, support, training, customization
+- Offer premium features as separate AGPLv3 modules
+- Provide consulting services around the software
+
+You cannot:
+- Create proprietary closed-source versions
+- Offer hosted versions without source disclosure
+
+================================================================================
+ALTERNATIVE LICENSING
+================================================================================
+
+If your use case is incompatible with AGPLv3 (e.g., integration with 
+proprietary planning systems where source disclosure is impossible), contact
+the maintainers to discuss:
+
+- Commercial dual-licensing options
+- Contributor License Agreements (CLAs)
+- Custom license terms for specific deployments
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This project incorporates components with compatible licenses:
+- PostgreSQL (PostgreSQL License - permissive)
+- PostGIS (GPL v2+)
+- FastAPI (MIT)
+- React (MIT)
+- See package.json and requirements.txt for full dependency list
+
+All third-party licenses are preserved in their respective components.
+
+================================================================================
+CONTACT
+================================================================================
+
+For licensing questions, alternative arrangements, or permissions:
+- GitHub Issues: [Your repository URL]
+- Email: [Your contact email]
+
+================================================================================

@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles for The Planner's Assistant demo */
+:root {
+  /* Fallbacks will be overridden by useThemeInstall hook */
+  --surface: #F7F8FB;
+  --panel: #FFFFFF;
+  --edge: #D9DCE8;
+  --ink: #27324A;
+  --muted: #5B6475;
+  --accent: #329c85;
+  --brand: #f5c315;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
