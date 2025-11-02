@@ -98,6 +98,9 @@ async def reason(req: ReasonRequest):
 
 # Service endpoints (called by playbook tools)
 from services import policy, docs, spatial, precedent, standards, feedback, classify
+from services import retriever as retriever_service
+from services import synthesise as synthesise_service
+from services import map_overlays as map_overlays_service
 from services import files as files_service
 from services import ingest as ingest_service
 
@@ -110,6 +113,11 @@ app.include_router(feedback.router, prefix="/services/feedback", tags=["feedback
 app.include_router(classify.router, prefix="/services", tags=["classify"])
 app.include_router(files_service.router, prefix="/services/files", tags=["files"])
 app.include_router(ingest_service.router, prefix="/services/ingest", tags=["ingest"])
+
+# New Planner-pattern endpoints
+app.include_router(retriever_service.router, tags=["retrieval"])
+app.include_router(synthesise_service.router, tags=["synthesis"])
+app.include_router(map_overlays_service.router, tags=["map"])
 
 if __name__ == "__main__":
     import uvicorn

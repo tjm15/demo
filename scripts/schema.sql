@@ -105,6 +105,18 @@ CREATE INDEX idx_precedent_tsv ON precedent USING GIN (tsv);
 CREATE INDEX idx_source_provenance_domain ON source_provenance(domain);
 CREATE INDEX idx_source_provenance_url ON source_provenance(source_url);
 
+-- Retrieval audit logs (optional)
+CREATE TABLE IF NOT EXISTS retrieval_logs (
+    id SERIAL PRIMARY KEY,
+    t TIMESTAMP DEFAULT NOW(),
+    question TEXT,
+    site_geom GEOMETRY(GEOMETRY, 27700),
+    lpa_code TEXT,
+    top_k INTEGER,
+    result_count INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO tpa;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO tpa;

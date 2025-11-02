@@ -14,6 +14,7 @@ import { EvidenceSnapshot } from './panels/EvidenceSnapshot';
 import { MapPanel } from './panels/MapPanel';
 import { MapView } from './panels/MapView';
 import { DocViewer } from './panels/DocViewer';
+import { SafeModeNotice } from './panels/SafeModeNotice';
 
 export interface PanelData {
   id: string;
@@ -41,6 +42,7 @@ const PANEL_COMPONENTS: Record<string, React.FC<{ data: any }>> = {
   evidence_snapshot: EvidenceSnapshot,
   map: MapPanel,
   doc_viewer: DocViewer,
+  safe_mode_notice: SafeModeNotice,
 };
 
 export function PanelHost({ panels, module }: PanelHostProps) {

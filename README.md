@@ -1,6 +1,6 @@
 # The Planner's Assistant - Full Demo
 
-A fully functioning AI-powered planning assistant for urban development and policy analysis.
+A fully functioning AI-powered planning assistant with **stable LLM-driven dashboard diffusion**.
 
 ## 🎯 Overview
 
@@ -13,26 +13,56 @@ The Planner's Assistant (TPA) is a production-ready application that provides AI
 - **Consultation Feedback**: Cluster and analyze public consultation responses
 - **Evidence Base**: Site analysis with spatial constraints and policy mapping
 
+### ✨ New: Dashboard Diffusion System
+
+**Stable, validated LLM-driven UI updates** with:
+- ✅ Schema validation for all panel updates
+- ✅ Budget limits (5 panels stable / 15 deep mode)
+- ✅ Circuit breaker with automatic safe mode
+- ✅ Deterministic IDs for reproducible outputs
+- ✅ Transactional patches with rollback
+- ✅ Module-aware permissions
+
+📖 **See [DASHBOARD_DIFFUSION.md](DASHBOARD_DIFFUSION.md)** for implementation guide  
+📋 **See [PATCH_PIPELINE_QUICK_REF.md](PATCH_PIPELINE_QUICK_REF.md)** for quick reference
+
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐
-│   Frontend  │  React + Vite + TailwindCSS + Framer Motion
-│  (Port 5173)│  Real-time streaming UI with animated panels
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Kernel    │  FastAPI reasoning engine
-│  (Port 8081)│  Module-aware playbooks, SSE streaming
-└──────┬──────┘
-       │
-       ├─────────────┐
-       ▼             ▼
-┌──────────┐  ┌───────────┐
-│  Proxy   │  │ PostgreSQL│  PostGIS + pgvector
-│(Port 8082)│  │  + Redis  │  Spatial + vector search
-└──────────┘  └───────────┘
+┌─────────────────────────────────────────────────────────────┐
+│   Frontend (React + Vite + TailwindCSS + Framer Motion)    │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ Dashboard Diffusion Pipeline                       │     │
+│  │ • Intent Batcher (50ms windows)                    │     │
+│  │ • Patch Validator (Zod schemas)                    │     │
+│  │ • Budget Tracker (5 stable / 15 deep)              │     │
+│  │ • Circuit Breaker (auto safe mode)                 │     │
+│  └────────────────────────────────────────────────────┘     │
+│                         (Port 5173)                         │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ SSE Stream
+┌───────────────────────────▼─────────────────────────────────┐
+│   Kernel (FastAPI)                       (Port 8081)        │
+│  ┌────────────────────────────────────────────────────┐     │
+│  │ Patch Emission                                     │     │
+│  │ • Deterministic IDs                                │     │
+│  │ • Panel validation (Pydantic)                      │     │
+│  │ • Budget enforcement                               │     │
+│  └────────────────────────────────────────────────────┘     │
+│  • Module-aware playbooks                                   │
+│  • SSE streaming (tokens, intents, patches)                 │
+│  • Trace logging                                            │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+            ┌───────────────┴───────────────┐
+            ▼                               ▼
+    ┌───────────────┐              ┌──────────────┐
+    │ Proxy         │              │ PostgreSQL   │
+    │ (Port 8082)   │              │ + PostGIS    │
+    │ • Web fetch   │              │ + pgvector   │
+    │ • Allow-list  │              │ + Redis      │
+    │ • Cache       │              │              │
+    └───────────────┘              └──────────────┘
 ```
 
 ## 🚀 Quick Start
