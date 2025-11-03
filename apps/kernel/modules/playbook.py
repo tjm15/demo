@@ -23,18 +23,63 @@ ALLOWED_BY_MODULE = {
     "evidence": ["gov.uk", "london.gov.uk", "planningportal.co.uk"]
 }
 
+from typing import Union
+from datetime import date
+
+
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively convert objects into JSON-serializable forms.
+    Handles datetime/date, sets/tuples, and pydantic-like models with model_dump.
+    """
+    try:
+        from pydantic import BaseModel  # local import to avoid hard dep at import time
+    except Exception:
+        BaseModel = None  # type: ignore
+
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, (list, tuple, set)):
+        return [_sanitize_for_json(x) for x in obj]
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_for_json(v) for k, v in obj.items()}
+    if BaseModel and isinstance(obj, BaseModel):  # type: ignore[arg-type]
+        try:
+            return obj.model_dump()
+        except Exception:
+            pass
+    # Fallback to string
+    try:
+        return str(obj)
+    except Exception:
+        return "<unserializable>"
+
+
 async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGenerator[Dict[str, Any], None]:
     """Execute reasoning playbook for given module."""
     
+    print(f"[Playbook] Starting execute_playbook for module={context.module}")
+    
     # Phase 1: Planning
-    yield {
-        "type": "intent",
-        "data": {
-            "action": "init_workspace",
-            "module": context.module,
-            "message": f"Initializing {context.module.upper()} module workspace..."
+    try:
+        yield {
+            "type": "intent",
+            "data": _sanitize_for_json({
+                "action": "init_workspace",
+                "module": context.module,
+                "message": f"Initializing {context.module.upper()} module workspace..."
+            })
         }
-    }
+        print(f"[Playbook] Yielded init_workspace intent")
+    except Exception as e:
+        print(f"[Playbook] Failed to yield init_workspace: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    
     await asyncio.sleep(0.1)
     
     # Phase 2: Retrieval
@@ -91,12 +136,36 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
     # Initial panel hint
     yield {
         "type": "intent",
-        "data": {
+        "data": _sanitize_for_json({
             "action": "show_panel",
             "panel": "evidence_snapshot" if context.module == "evidence" else "applicable_policies",
-            "message": "Retrieving relevant policies..."
-        }
+            "message": "Retrieving relevant data..."
+        })
     }
+    # For Evidence module, proactively emit Evidence Browser with initial results
+    if context.module == "evidence":
+        try:
+            from modules.playbook import db_search_evidence as _dbse
+            items_raw = _dbse(context.prompt or "", limit=50)
+            # Sanitize the entire items list to ensure no datetime/date objects leak
+            items = _sanitize_for_json(items_raw)
+            print(f"[Playbook] Evidence browser items count: {len(items)}")
+            payload = {
+                "action": "show_panel",
+                "panel": "evidence_browser",
+                "data": {"items": items, "filters": {"topics": [], "scope": "db"}}
+            }
+            print(f"[Playbook] About to yield evidence_browser intent")
+            yield {
+                "type": "intent",
+                "data": payload
+            }
+        except Exception as _e:
+            print(f"[Playbook] Evidence browser emission failed: {_e}")
+            import traceback
+            traceback.print_exc()
+            # Non-fatal; continue with planning
+            pass
     await asyncio.sleep(0.1)
     
     # Phase 3: LLM-driven panel planning
@@ -124,7 +193,8 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
             panel_intent = await dispatch_panel(panel_name, context, citations)
             
             if panel_intent:
-                yield panel_intent
+                # Ensure panel intent payload is serializable
+                yield {"type": panel_intent.get("type"), "data": _sanitize_for_json(panel_intent.get("data"))}
                 await asyncio.sleep(0.1)
                 
                 await write_trace(trace_path, TraceEntry(
@@ -156,7 +226,7 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
             if not piece:
                 continue
             collected_tokens.append(piece)
-            yield {"type": "token", "data": {"token": piece, "index": idx}}
+            yield {"type": "token", "data": _sanitize_for_json({"token": piece, "index": idx})}
             idx += 1
         print(f"[Playbook] LLM stream complete, yielded {idx} tokens")
     except Exception as e:
@@ -182,11 +252,11 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
             ))
             yield {
                 "type": "intent",
-                "data": {
+                "data": _sanitize_for_json({
                     "action": "status",
                     "message": "Action suggestions available",
                     "data": {"suggestions": suggestions}
-                }
+                })
             }
         else:
             # Execute automatically when interactive mode is disabled
@@ -199,7 +269,7 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
                     output={"intents": len(auto_intents)}
                 ))
             for intent in auto_intents:
-                yield intent
+                yield {"type": intent.get("type"), "data": _sanitize_for_json(intent.get("data"))}
                 await asyncio.sleep(0.05)
     except Exception as e:
         await write_trace(trace_path, TraceEntry(
@@ -212,11 +282,11 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
     # Phase 5: Final result
     yield {
         "type": "final",
-        "data": {
+        "data": _sanitize_for_json({
             "module": context.module,
             "summary": f"Analysis complete for {context.module} module",
             "session_complete": True
-        }
+        })
     }
 
 def db_search_policies(query: str, limit: int = 6) -> List[Dict[str, Any]]:
@@ -335,9 +405,17 @@ def db_search_evidence(query: str, topics: List[str] = None, limit: int = 50) ->
     where_clauses = []
     params = []
     
-    # Simple text search on title and key_findings
-    where_clauses.append("(e.title ILIKE %s OR e.key_findings ILIKE %s)")
-    params.extend([f"%{query}%", f"%{query}%"])
+    # Text search across several fields (title, findings, publisher, author, geographic_scope, topic_tags)
+    where_clauses.append("(" 
+                        "e.title ILIKE %s OR "
+                        "e.key_findings ILIKE %s OR "
+                        "e.publisher ILIKE %s OR "
+                        "e.author ILIKE %s OR "
+                        "e.geographic_scope ILIKE %s OR "
+                        "EXISTS (SELECT 1 FROM unnest(e.topic_tags) t WHERE t ILIKE %s)"
+                        ")")
+    like = f"%{query}%"
+    params.extend([like, like, like, like, like, like])
     
     # Topic filter
     if topics:
@@ -347,7 +425,7 @@ def db_search_evidence(query: str, topics: List[str] = None, limit: int = 50) ->
     if where_clauses:
         sql_parts.append("WHERE " + " AND ".join(where_clauses))
     
-    sql_parts.append("ORDER BY e.updated_at DESC LIMIT %s")
+    sql_parts.append("ORDER BY e.updated_at DESC NULLS LAST, e.id DESC LIMIT %s")
     params.append(limit)
     
     sql = " ".join(sql_parts)

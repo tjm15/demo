@@ -12,12 +12,13 @@ Evidence Base Mode should:
 
 ---
 
-# 🔌 Sources & Ingestion (Proxy + Uploads)
+# 🔌 Sources & Ingestion (Proxy + Read-Only DB)
 
-* **Search order (configurable):** `DB (canonical) → Proxy Cache (content-addressed) → Live Web (whitelisted)`.
-* **Uploads:** PDF/CSV/XLSX/ZIP/GeoPackage/Shapefile → ingested and **persisted into DB** (+ object store) with a new **evidence_version**.
-* **Proxy/cache rules:** domain whitelist (LPA, DLUHC, ONS, EA, etc.), robots-respecting, ETag/Last-Modified revalidation, license capture.
-* **De-dupe by hash**; originals stored in CAS; metadata & links stored in DB.
+* **Search order:** `DB (read-only canonical) → Proxy Cache (content-addressed) → Live Web (whitelisted)`.
+* **Demo Mode:** Database is pre-seeded with fixture evidence items; no write operations during demo.
+* **Future:** Uploads (PDF/CSV/XLSX/ZIP/GeoPackage/Shapefile) → ingested and **persisted into DB** (+ object store) with a new **evidence_version** (post-demo feature).
+* **Proxy/cache rules:** domain whitelist (GOV.UK, LPA, DLUHC, ONS, EA, PINS, GLA), robots-respecting, ETag/Last-Modified revalidation, license capture.
+* **De-dupe by hash**; originals stored in CAS (file-based for demo); metadata in DB (read-only).
 
 ---
 
@@ -58,24 +59,24 @@ Evidence Base Mode should:
 # 🔍 Core Functions
 
 * **Unified Search & Filter:** topic, year, author, spatial flag, linked policy, freshness, publisher; scope toggle: **DB / DB+Cache / DB+Cache+Live**.
-* **Document Parsing:** OCR, text extraction, section/figure tables; CSV/XLSX profiled; Geo imports to PostGIS.
-* **Map Overlay:** view any attached spatial layers; bbox, SRID, feature count.
-* **Dependency Graph:** evidence ↔ policy links; show strength/rationale.
-* **Version Timeline:** superseded chains, diffs of key findings.
-* **Currency Alerts:** >5y old, method mismatch, superseded.
-* **Neighbour Benchmarking:** same-type studies from adjacent LPAs (whitelist).
-* **Evidence Gap Analysis:** policies with weak/stale/no evidence.
+* **Document Parsing:** OCR (Surya), text extraction (pdfminer), section/figure tables; CSV/XLSX profiled; Geo imports to PostGIS (demo: pre-imported).
+* **Map Overlay:** view any attached spatial layers; bbox, SRID, feature count (PostGIS).
+* **Dependency Graph:** evidence ↔ policy links; show strength/rationale (DB queries, graph visualization panel).
+* **Version Timeline:** superseded chains, diffs of key findings (evidence_version table).
+* **Currency Alerts:** >5y old, method mismatch, superseded (reliability_flags JSON).
+* **Neighbour Benchmarking:** same-type studies from adjacent LPAs (whitelist, proxy fetch).
+* **Evidence Gap Analysis:** policies with weak/stale/no evidence (evidence_gaps panel).
 
 ---
 
 # 🧩 UI Panels (minimum)
 
-1. **Evidence Browser:** search, filters, scope toggle (DB/Cache/Live), badges (`LOCAL`, `CACHED`, `LIVE`).
-2. **Record View:** metadata, key findings, lineage, license, attachments, actions (*open, link to policy, pin cache*).
-3. **Map Tab:** spatial layer preview + layer metadata.
-4. **Dependencies:** policy links and DAG.
-5. **Gaps & Alerts:** currency/status dashboard with quick-fix actions (re-fetch, request update).
-6. **Upload/Add from URL:** drag-drop or URL via proxy → shows ingest steps and results.
+1. **Evidence Browser:** search, filters, scope toggle (DB/Cache/Live), badges (`LOCAL`, `CACHED`, `LIVE`). ✅ Implemented
+2. **Record View:** metadata, key findings, lineage, license, attachments, actions (*open, link to policy, pin cache*). ✅ Component created
+3. **Map Tab:** spatial layer preview + layer metadata (PostGIS layers). ✅ Existing map panel
+4. **Dependencies:** policy links and DAG (dependency_graph panel). ✅ Component created
+5. **Gaps & Alerts:** currency/status dashboard with quick-fix actions (evidence_gaps panel). ✅ Component created
+6. **Upload/Add from URL:** drag-drop or URL via proxy → shows ingest steps and results. 🚧 UI created, backend placeholder (post-demo)
 
 ---
 
@@ -108,13 +109,12 @@ Evidence Base Mode should:
 
 # 🧠 Minimal API (thin slice)
 
-* `POST /evidence/upload` (multipart)
-* `POST /evidence/fetch { url }` (proxy→cache→DB version)
-* `GET /evidence/search?q&topic&year&scope=db|cache|live&…`
-* `GET /evidence/{id}` (latest + lineage)
-* `POST /evidence/{id}/link-policy { policy_id, rationale, strength }`
-* `POST /evidence/{id}/enhance` (re-run OCR/ingest)
-* `GET /graph/dependencies?policy_id=…`
+* `POST /reason` (SSE stream) - Main reasoning endpoint, returns evidence panels based on module/prompt
+* `POST /services/evidence/search { q, topic, year, scope }` - Direct evidence search (for frontend direct access only, not used in reasoning flow)
+* `GET /services/evidence/{id}` - Get evidence item by ID (latest + lineage)
+* `POST /services/evidence/{id}/link-policy { policy_id, rationale, strength }` - 🚧 Post-demo (read-only for now)
+* `POST /services/evidence/{id}/enhance` - 🚧 Post-demo (re-run OCR/ingest)
+* `GET /graph/dependencies?policy_id=…` - 🚧 Post-demo (evidence-policy dependency graph)
 
 ---
 
@@ -469,6 +469,27 @@ No UI visibility; accessible for post-run audits.
 
 * Disable CORS on proxy; require `PROXY_INTERNAL_TOKEN` from kernel.
 * Strip scripts/styles from HTML; PDF text only; UTF‑8 normalisation; limit page count.
+
+### 19.8 External API Contacts
+
+**Kernel contacts:**
+- LLM providers: OpenAI/Anthropic/Gemini API (configurable via `LLM_PROVIDER` env)
+- Ollama: local embeddings (qwen3-embedding:8b)
+- OS Places API: geocoding for UK addresses (requires `OS_PLACES_API_KEY`)
+- PostgreSQL: local database (read-only for demo)
+- Proxy: internal HTTP with `PROXY_INTERNAL_TOKEN` (no public access)
+
+**Proxy contacts:**
+- Only allow-listed GOV.UK domains from `allowed_sources.yml`
+- robots.txt compliant, no JavaScript execution
+- No third-party APIs
+
+**Frontend:**
+- Never contacts proxy directly (kernel mediates all web fetches)
+- Static assets from CDN/Vite dev server only
+- All reasoning via `/reason` SSE endpoint
+
+---
 
 ## 20. Feature Parity Checklist (must match your zip)
 

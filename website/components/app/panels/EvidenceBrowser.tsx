@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Filter, Database, Globe, HardDrive, Calendar, Tag, AlertCircle, Link as LinkIcon, MapPin, TrendingUp } from 'lucide-react';
+import { localRerank } from '../../../local-tools';
 
 interface EvidenceItem {
   id: number;
@@ -45,6 +46,8 @@ export function EvidenceBrowser({ items = [], onSelectItem, onSearch }: Evidence
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [scope, setScope] = useState<'db' | 'cache' | 'live'>('db');
   const [showFilters, setShowFilters] = useState(false);
+  const [rerankedIds, setRerankedIds] = useState<string[] | null>(null);
+  const localToolsEnabled = (import.meta as any).env?.VITE_LOCAL_TOOLS === '1';
 
   const allTopics = Array.from(new Set(items.flatMap(i => i.topic_tags || [])));
   const allTypes = Array.from(new Set(items.map(i => i.type)));
@@ -72,6 +75,49 @@ export function EvidenceBrowser({ items = [], onSelectItem, onSearch }: Evidence
     }
     return true;
   });
+
+  // Optional client-side rerank using local tools (WebWorker)
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      // Only rerank when enabled, there is a query, and we have items
+      if (!localToolsEnabled || !searchQuery.trim() || filteredItems.length === 0) {
+        setRerankedIds(null);
+        return;
+      }
+      try {
+        // Limit docs for perf; rerank top 50 filtered items by simple heuristic text
+        const MAX_DOCS = 50;
+        const docs = filteredItems.slice(0, MAX_DOCS).map((it) => ({
+          id: String(it.id),
+          text: `${it.title}\n${it.key_findings ?? ''}`.trim(),
+        }));
+        const ids = await localRerank(searchQuery, docs, 20);
+        if (!cancelled && ids) {
+          setRerankedIds(ids);
+        }
+      } catch (e) {
+        // On any error, fall back to original ordering
+        if (!cancelled) setRerankedIds(null);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+    // Recompute when the visible list or query changes
+  }, [localToolsEnabled, searchQuery, filteredItems]);
+
+  const orderedItems = useMemo(() => {
+    if (!rerankedIds || rerankedIds.length === 0) return filteredItems;
+    const rank = new Map<string, number>();
+    rerankedIds.forEach((id, i) => rank.set(id, i));
+    // Stable sort: ranked items first by rank, then keep original order
+    return [...filteredItems].sort((a, b) => {
+      const ra = rank.has(String(a.id)) ? (rank.get(String(a.id)) as number) : Infinity;
+      const rb = rank.has(String(b.id)) ? (rank.get(String(b.id)) as number) : Infinity;
+      if (ra === rb) return 0;
+      return ra - rb;
+    });
+  }, [filteredItems, rerankedIds]);
 
   const isStale = (year?: number) => {
     if (!year) return false;
@@ -134,6 +180,11 @@ export function EvidenceBrowser({ items = [], onSelectItem, onSearch }: Evidence
             </button>
           ))}
         </div>
+        {localToolsEnabled && rerankedIds && (
+          <div className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold text-[color:var(--accent)]">
+            <TrendingUp className="w-3.5 h-3.5" /> Locally reranked
+          </div>
+        )}
       </div>
 
       {/* Filters Panel */}
@@ -191,7 +242,7 @@ export function EvidenceBrowser({ items = [], onSelectItem, onSearch }: Evidence
 
       {/* Evidence List */}
       <div className="space-y-3 max-h-[600px] overflow-y-auto">
-        {filteredItems.map((item) => {
+        {orderedItems.map((item) => {
           const SourceBadge = SOURCE_BADGES[item.source_type];
           const stale = isStale(item.year);
 

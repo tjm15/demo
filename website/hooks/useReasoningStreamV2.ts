@@ -34,6 +34,7 @@ import {
   CircuitBreakerState,
   resetCircuitBreaker,
 } from 'contracts/circuit-breaker';
+import { initLocalTools } from '../local-tools';
 
 interface ReasonRequest {
   module: string;
@@ -78,6 +79,17 @@ export function useReasoningStream(opts?: StreamOptions) {
   const [suggestions, setSuggestions] = useState<Array<{ type: string; query?: string }>>([]);
   
   // Track if we should persist (disable during hydration to prevent spam)
+
+  // Optional: initialise local tools (WebWorker) if enabled by env
+  useEffect(() => {
+    (async () => {
+      const ok = await initLocalTools({
+        embedModel: (import.meta as any).env?.VITE_LOCAL_EMBED_MODEL,
+        rerankModel: (import.meta as any).env?.VITE_LOCAL_RERANK,
+      });
+      if (ok) console.log('[useReasoningStreamV2] Local tools ready');
+    })();
+  }, []);
   const shouldPersistRef = useRef(false);
 
   // Hydrate from initial state if provided
@@ -307,9 +319,12 @@ export function useReasoningStream(opts?: StreamOptions) {
                 setReasoning((prev) => prev + (parsed.token || parsed.data?.token || ''));
               } else if (lastEventType === 'intent') {
                 const intent: Intent = parsed;
-                // Capture suggestions from status event
-                if (intent.action === 'status' && intent.data?.suggestions) {
-                  setSuggestions(intent.data.suggestions);
+                // Capture suggestions from status event with safe narrowing
+                if (intent.action === 'status' && intent.data && typeof intent.data === 'object') {
+                  const maybe = (intent.data as any).suggestions;
+                  if (Array.isArray(maybe)) {
+                    setSuggestions(maybe as Array<{ type: string; query?: string }>);
+                  }
                 }
                 
                 // Route through batcher for patch translation

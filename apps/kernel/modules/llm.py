@@ -159,10 +159,16 @@ def build_system_prompt(module: str) -> str:
 
 
 def build_user_prompt(module: str, user_text: str, site: Optional[dict] = None, proposal: Optional[dict] = None) -> str:
+    def _fallback(o):
+        try:
+            # handle datetimes/paths minimally via string
+            return str(o)
+        except Exception:
+            return "<unserializable>"
     parts = [f"Module: {module}", f"Question: {user_text}"]
     if site:
-        parts.append(f"Site: {json.dumps(site)}")
+        parts.append(f"Site: {json.dumps(site, default=_fallback)}")
     if proposal:
-        parts.append(f"Proposal: {json.dumps(proposal)}")
+        parts.append(f"Proposal: {json.dumps(proposal, default=_fallback)}")
     parts.append("Respond step-by-step with a short rationale then actionable outputs.")
     return "\n".join(parts)

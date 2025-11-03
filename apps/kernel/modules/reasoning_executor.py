@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 import json
 
 from .context import ContextPack
-from .llm import call_llm
+from .llm import generate_text
 from . import playbook as pb
 
 
@@ -67,7 +67,7 @@ async def extract_actions(reasoning: str, context: ContextPack) -> List[Dict[str
 
 **Available tools:** {', '.join(available_tools)}
 
-**Context traces:** {json.dumps(context_traces, indent=2)}
+**Context traces:** {json.dumps(context_traces, indent=2, default=str)}
 
 Respond with a JSON object:
 {{
@@ -81,10 +81,9 @@ Respond with a JSON object:
 Keep to 1-3 actions. Be specific about queries."""
 
     try:
-        response = await call_llm(
-            messages=[{"role": "user", "content": action_prompt}],
-            temperature=0.3,
-            max_tokens=500
+        response = await generate_text(
+            action_prompt,
+            model=None
         )
         
         # Parse structured response

@@ -29,7 +29,7 @@ async def execute_action(req: ExecuteActionRequest) -> Dict[str, Any]:
         interactive_actions=True,
     )
 
-    intents = execute_actions([
+    intents = await execute_actions([
         {"type": req.action, "query": req.query}
     ], ctx, citations=[])
 

@@ -27,6 +27,10 @@ export interface TranslationResult {
   errors?: string[];
 }
 
+function toRecord(data: unknown): Record<string, unknown> {
+  return (data && typeof data === 'object') ? (data as Record<string, unknown>) : {};
+}
+
 /**
  * Translate a single intent to patch operations
  * 
@@ -57,8 +61,8 @@ export function translateIntent(
         
       case 'patch':
         // Already a patch operation, validate and pass through
-        if (intent.data?.ops && Array.isArray(intent.data.ops)) {
-          ops.push(...intent.data.ops);
+        if (intent.data && typeof intent.data === 'object' && Array.isArray((intent.data as any).ops)) {
+          ops.push(...((intent.data as any).ops as PatchOp[]));
         } else {
           errors.push('Invalid patch intent: missing ops array');
         }
@@ -104,7 +108,7 @@ function translateShowPanel(
   // Generate deterministic ID
   const panelId = intent.id || generatePanelIdFromData(
     intent.panel,
-    intent.data || {}
+    toRecord(intent.data)
   );
   
   // Check for duplicate
@@ -121,7 +125,7 @@ function translateShowPanel(
   const panel: PanelData = {
     id: panelId,
     type: intent.panel,
-    data: intent.data || {},
+    data: toRecord(intent.data),
     timestamp: Date.now(),
     module: context.module,
   };
@@ -156,7 +160,7 @@ function translateUpdatePanel(
   // Resolve panel ID
   const panelId = intent.id || (intent.panel ? generatePanelIdFromData(
     intent.panel,
-    intent.data || {}
+    toRecord(intent.data)
   ) : '');
   
   if (!panelId) {
@@ -179,7 +183,7 @@ function translateUpdatePanel(
   const op: PatchOp = {
     op: 'replace',
     path,
-    value: intent.data || {},
+    value: toRecord(intent.data),
   };
   
   return [op];

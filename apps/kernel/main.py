@@ -10,6 +10,7 @@ from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List, Optional
+from datetime import date
 
 # Add repo root to Python path so we can import from contracts/
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,6 +24,23 @@ from sse_starlette.sse import EventSourceResponse
 from modules.context import ContextPack, ReasonRequest
 from modules.playbook import execute_playbook
 from modules.trace import TraceEntry, write_trace
+
+
+def _json_default(obj):
+    """Best-effort serializer for SSE payloads.
+    Converts datetime/date to ISO strings, Paths to str, and sets/tuples to lists.
+    Fallback: str(obj).
+    """
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, (set, tuple)):
+        return list(obj)
+    try:
+        return obj.__json__()  # type: ignore[attr-defined]
+    except Exception:
+        return str(obj)
 
 app = FastAPI(title="TPA Reasoning Kernel")
 
@@ -70,7 +88,7 @@ async def reason(req: ReasonRequest):
                 log_security_event("rate_limit_exceeded", client_id, {"module": req.module}, "warning")
                 yield {
                     "event": "error",
-                    "data": json.dumps({"message": "Rate limit exceeded. Please try again later."})
+                    "data": json.dumps({"message": "Rate limit exceeded. Please try again later."}, default=_json_default)
                 }
                 return
             
@@ -89,7 +107,7 @@ async def reason(req: ReasonRequest):
                 log_security_event("input_validation_failed", client_id, {"error": str(e)}, "warning")
                 yield {
                     "event": "error",
-                    "data": json.dumps({"message": f"Invalid input: {e}"})
+                    "data": json.dumps({"message": f"Invalid input: {e}"}, default=_json_default)
                 }
                 return
             
@@ -115,7 +133,7 @@ async def reason(req: ReasonRequest):
             async for event in execute_playbook(context, trace_path):
                 yield {
                     "event": event["type"],
-                    "data": json.dumps(event["data"])
+                    "data": json.dumps(event["data"], default=_json_default)
                 }
             
             # Log completion
@@ -129,7 +147,7 @@ async def reason(req: ReasonRequest):
             log_security_event("reasoning_error", session_id, {"error": str(e)}, "error")
             yield {
                 "event": "error",
-                "data": json.dumps({"message": str(e)})
+                "data": json.dumps({"message": str(e)}, default=_json_default)
             }
     
     return EventSourceResponse(event_generator())

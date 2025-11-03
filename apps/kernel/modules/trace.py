@@ -3,6 +3,17 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
+from datetime import datetime, date
+
+
+def _json_default(obj):
+    """Best-effort serializer for trace payloads."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    try:
+        return obj.__json__()  # type: ignore[attr-defined]
+    except Exception:
+        return str(obj)
 
 class TraceEntry(BaseModel):
     """Single trace entry."""
@@ -17,5 +28,21 @@ class TraceEntry(BaseModel):
 
 async def write_trace(path: Path, entry: TraceEntry):
     """Append trace entry to JSONL file."""
+    line = None
+    try:
+        line = entry.model_dump_json()
+    except Exception:
+        try:
+            # Fallback to generic json.dumps with default handler
+            line = json.dumps(entry.model_dump(), default=_json_default)
+        except Exception:
+            # Final fallback: minimal fields only
+            minimal = {
+                "t": getattr(entry, 't', ''),
+                "step": getattr(entry, 'step', ''),
+                "module": getattr(entry, 'module', None),
+                "error": "trace_serialize_failed"
+            }
+            line = json.dumps(minimal)
     with open(path, 'a') as f:
-        f.write(entry.model_dump_json() + '\n')
+        f.write(line + '\n')
