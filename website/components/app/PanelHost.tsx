@@ -12,7 +12,8 @@ import { VisualCompliance } from './panels/VisualCompliance';
 import { ConsultationThemes } from './panels/ConsultationThemes';
 import { EvidenceSnapshot } from './panels/EvidenceSnapshot';
 import { EvidenceBrowser } from './panels/EvidenceBrowser';
-import { EvidenceRecord } from './panels/EvidenceRecord';
+import { EvidenceBrowserPanel } from './panels/EvidenceBrowserPanel';
+import { EvidenceRecordPanel } from './panels/EvidenceRecordPanel';
 import { EvidenceGaps } from './panels/EvidenceGaps';
 import { DependencyGraph } from './panels/DependencyGraph';
 import { MapPanel } from './panels/MapPanel';
@@ -44,8 +45,8 @@ const PANEL_COMPONENTS: Record<string, React.FC<{ data: any }>> = {
   visual_compliance: VisualCompliance,
   consultation_themes: ConsultationThemes,
   evidence_snapshot: EvidenceSnapshot,
-  evidence_browser: EvidenceBrowser,
-  evidence_record: EvidenceRecord,
+  evidence_browser: EvidenceBrowserPanel,
+  evidence_record: EvidenceRecordPanel,
   evidence_gaps: EvidenceGaps,
   dependency_graph: DependencyGraph,
   map: MapPanel,

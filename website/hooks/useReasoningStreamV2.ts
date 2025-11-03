@@ -68,6 +68,8 @@ export function useReasoningStream(opts?: StreamOptions) {
   
   const [isRunning, setIsRunning] = useState(false);
   const [reasoning, setReasoning] = useState<string>('');
+  const [currentPrompt, setCurrentPrompt] = useState<any>(null); // Active user prompt
+  const currentSessionIdRef = useRef<string | null>(null); // Track session ID for responses
   
   // Internal state refs
   const budgetRef = useRef<BudgetTracker>(createBudgetTracker());
@@ -228,9 +230,11 @@ export function useReasoningStream(opts?: StreamOptions) {
     setIsRunning(true);
     setReasoning('');
     setSuggestions([]);
+    setCurrentPrompt(null);
     
     // Reset state
     sessionIdRef.current = `session_${Date.now()}`;
+    currentSessionIdRef.current = null; // Will be set from SSE metadata if interactive
     runModeRef.current = request.run_mode;
     budgetRef.current = createBudgetTracker();
     resetCircuitBreaker(circuitBreakerRef.current);
@@ -317,6 +321,11 @@ export function useReasoningStream(opts?: StreamOptions) {
               
               if (lastEventType === 'token') {
                 setReasoning((prev) => prev + (parsed.token || parsed.data?.token || ''));
+              } else if (lastEventType === 'prompt_user') {
+                // Interactive prompt from kernel
+                const promptData = parsed;
+                currentSessionIdRef.current = promptData.session_id || sessionIdRef.current;
+                setCurrentPrompt(promptData);
               } else if (lastEventType === 'intent') {
                 const intent: Intent = parsed;
                 // Capture suggestions from status event with safe narrowing
@@ -400,6 +409,80 @@ export function useReasoningStream(opts?: StreamOptions) {
     }
   }, [applyPatchEnvelope, enterSafeMode]);
 
+  /**
+   * Locally inject an intent (e.g., from a UI click) and render its effect.
+   * If the batcher is active, we route through it for consistent translation;
+   * otherwise translate immediately and apply the resulting patch envelope.
+   */
+  const ingestIntent = useCallback((intent: Intent) => {
+    try {
+      if (batcherRef.current) {
+        batcherRef.current.addIntent(intent);
+        // Flush quickly for immediate UI response
+        batcherRef.current.flush();
+        return;
+      }
+      // Fallback: translate once and apply
+      const ctx = createTranslationContext(
+        (state.module as Module) ?? 'evidence',
+        sessionIdRef.current || `session_${Date.now()}`,
+        state.panels.map(p => p.id)
+      );
+      const envelope = translateIntent(intent, ctx);
+      applyPatchEnvelope(envelope);
+    } catch (e) {
+      console.error('[useReasoningStreamV2] Failed to ingest intent', e);
+    }
+  }, [applyPatchEnvelope, state.module, state.panels]);
+
+  /**
+   * Submit response to an active user prompt
+   */
+  const submitPromptResponse = useCallback(async (response: any) => {
+    // In the stateless flow we no longer POST to a session endpoint.
+    // Instead, re-run the /reason request with clarified parameters
+    // (e.g. selected_authority or confirm_web_fetch) so the kernel
+    // can pick up the user's choice from the request body.
+    const prompt = currentPrompt;
+    if (!prompt) {
+      console.error('No active prompt to respond to');
+      return;
+    }
+
+    try {
+      const baseReq = lastRequestRef.current || {
+        module: (prompt?.context?.module as any) || 'evidence',
+        prompt: (prompt?.context?.prompt_snippet as string) || '',
+        run_mode: runModeRef.current || 'stable',
+        allow_web_fetch: true,
+      } as ReasonRequest;
+
+      const newReq: any = { ...baseReq };
+
+      // Map responses from the modal to request fields the kernel expects
+      if (prompt.input_type === 'select') {
+        // e.g. selected_authority
+        newReq.selected_authority = response?.value;
+      } else if (prompt.input_type === 'confirm') {
+        // e.g. confirm_web_fetch
+        newReq.confirm_web_fetch = !!response?.value;
+      } else if (prompt.input_type === 'multiselect') {
+        newReq.selected = response?.value;
+      } else {
+        // generic user input mapping
+        newReq.user_input = response?.value;
+      }
+
+      // Clear the prompt immediately to update UI
+      setCurrentPrompt(null);
+
+      // Re-run reasoning with the clarified parameters
+      await startReasoning(newReq as ReasonRequest);
+    } catch (e) {
+      console.error('Failed to re-run reasoning with prompt response', e);
+    }
+  }, [startReasoning, currentPrompt]);
+
   // Allow external hydration from a saved dashboard state
   const hydrateDashboardState = useCallback((dashboard: DashboardState) => {
     shouldPersistRef.current = false; // Disable persistence during hydration
@@ -457,5 +540,8 @@ export function useReasoningStream(opts?: StreamOptions) {
     hydrateDashboardState,
     safeMode: state.safe_mode,
     errorCount: state.error_count,
+    ingestIntent,
+    currentPrompt,
+    submitPromptResponse,
   };
 }

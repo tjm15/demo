@@ -21,6 +21,11 @@ class ContextPack(BaseModel):
     run_mode: str = "stable"
     allow_web_fetch: bool = False
     interactive_actions: bool = True
+    session_id: Optional[str] = None  # For interactive sessions
+    session: Optional[Any] = None  # InteractiveSession object (if active)
+    
+    class Config:
+        arbitrary_types_allowed = True  # Allow non-pydantic types like session
     
     def get_tool_budget(self) -> int:
         """Get tool call budget based on run mode."""

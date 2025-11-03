@@ -1,5 +1,5 @@
 .PHONY: help install-deps db-init run-proxy run-kernel run-frontend dev clean \
-	ingest-paras ingest-embeddings ingest-layers ingest-graph ingest-precedents
+	ingest-paras ingest-embeddings ingest-evidence-embeddings ingest-layers ingest-graph ingest-precedents
 
 help:
 	@echo "The Planner's Assistant - Make targets"
@@ -14,6 +14,7 @@ help:
 	@echo ""
 	@echo "  ingest-paras        Extract policy paragraphs to fixtures JSONL (see scripts/extract_paras.py)"
 	@echo "  ingest-embeddings   Embed paragraphs and load to DB (scripts/embed_paras.py)"
+	@echo "  ingest-evidence-embeddings Embed evidence key findings to evidence_chunk (scripts/embed_evidence_chunks.py)"
 	@echo "  ingest-layers       Import GeoPackages into PostGIS (scripts/import_layers.sh)"
 	@echo "  ingest-graph        Import policy graph/tests (scripts/ingest_policy_graph.py)"
 	@echo "  ingest-precedents   Import precedents with embeddings (scripts/ingest_precedents.py)"
@@ -66,6 +67,15 @@ ingest-paras:
 ingest-embeddings:
 	@echo "Embedding policy paragraphs into Postgres..."
 	python3.12 scripts/embed_paras.py
+
+ingest-evidence-embeddings:
+	@echo "Embedding evidence key findings into evidence_chunk..."
+	# Use kernel venv if available for sentence-transformers
+	@if [ -d apps/kernel/.venv ]; then \
+		cd apps/kernel && . .venv/bin/activate && python ../../scripts/embed_evidence_chunks.py; \
+	else \
+		python3.12 scripts/embed_evidence_chunks.py; \
+	fi
 
 ingest-graph:
 	@echo "Importing policy graph relationships and tests..."

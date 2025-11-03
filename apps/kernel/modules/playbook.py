@@ -58,10 +58,32 @@ def _sanitize_for_json(obj: Any) -> Any:
         return "<unserializable>"
 
 
-async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGenerator[Dict[str, Any], None]:
-    """Execute reasoning playbook for given module."""
+async def execute_playbook(context: ContextPack, trace_path: Path, session=None) -> AsyncGenerator[Dict[str, Any], None]:
+    """Execute reasoning playbook for given module. Pass session for interactive prompts."""
     
     print(f"[Playbook] Starting execute_playbook for module={context.module}")
+    
+    # Attach session to context if provided
+    if session:
+        context.session = session
+    
+    # Special case: Evidence module uses dedicated playbook for data retrieval
+    # but still continues through standard LLM reasoning flow
+    evidence_early_intents = []
+    if context.module == "evidence":
+        print(f"[Playbook] Pre-fetching evidence module data")
+        try:
+            from modules import evidence_module
+            # Collect early intents (search results, prompts) but don't return yet
+            async for intent in evidence_module.evidence_playbook(context, trace_path):
+                evidence_early_intents.append(intent)
+                yield intent
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            print(f"[Playbook] Evidence module pre-fetch failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue to standard flow even if pre-fetch fails
     
     # Phase 1: Planning
     try:
@@ -133,39 +155,16 @@ async def execute_playbook(context: ContextPack, trace_path: Path) -> AsyncGener
                 error=str(e)
             ))
     
-    # Initial panel hint
-    yield {
-        "type": "intent",
-        "data": _sanitize_for_json({
-            "action": "show_panel",
-            "panel": "evidence_snapshot" if context.module == "evidence" else "applicable_policies",
-            "message": "Retrieving relevant data..."
-        })
-    }
-    # For Evidence module, proactively emit Evidence Browser with initial results
-    if context.module == "evidence":
-        try:
-            from modules.playbook import db_search_evidence as _dbse
-            items_raw = _dbse(context.prompt or "", limit=50)
-            # Sanitize the entire items list to ensure no datetime/date objects leak
-            items = _sanitize_for_json(items_raw)
-            print(f"[Playbook] Evidence browser items count: {len(items)}")
-            payload = {
+    # Initial panel hint - skip for evidence module since it handles its own panels
+    if context.module != "evidence":
+        yield {
+            "type": "intent",
+            "data": _sanitize_for_json({
                 "action": "show_panel",
-                "panel": "evidence_browser",
-                "data": {"items": items, "filters": {"topics": [], "scope": "db"}}
-            }
-            print(f"[Playbook] About to yield evidence_browser intent")
-            yield {
-                "type": "intent",
-                "data": payload
-            }
-        except Exception as _e:
-            print(f"[Playbook] Evidence browser emission failed: {_e}")
-            import traceback
-            traceback.print_exc()
-            # Non-fatal; continue with planning
-            pass
+                "panel": "applicable_policies",
+                "message": "Retrieving relevant data..."
+            })
+        }
     await asyncio.sleep(0.1)
     
     # Phase 3: LLM-driven panel planning

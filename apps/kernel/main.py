@@ -24,6 +24,7 @@ from sse_starlette.sse import EventSourceResponse
 from modules.context import ContextPack, ReasonRequest
 from modules.playbook import execute_playbook
 from modules.trace import TraceEntry, write_trace
+from db import get_async_pool
 
 
 def _json_default(obj):
@@ -65,6 +66,21 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 async def status():
     return {"status": "ok", "service": "tpa-kernel"}
 
+
+@app.get("/health")
+async def health():
+    """Health check that verifies DB connectivity (async).
+
+    Returns 200 when DB connection can be acquired and a trivial query runs.
+    """
+    try:
+        pool = await get_async_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+        return {"status": "ok", "db": "reachable"}
+    except Exception as e:
+        return {"status": "error", "db": str(e)}
+
 # Main reasoning endpoint
 @app.post("/reason")
 async def reason(req: ReasonRequest):
@@ -73,6 +89,9 @@ async def reason(req: ReasonRequest):
     async def event_generator() -> AsyncGenerator[Dict[str, Any], None]:
         session_id = str(uuid4())
         trace_path = LOG_DIR / f"{session_id}.jsonl"
+        
+        # Stateless mode: no server-side session created here. The frontend
+        # may re-run requests with clarified parameters when users respond.
         
         try:
             # Security validation
@@ -120,7 +139,10 @@ async def reason(req: ReasonRequest):
                 run_mode=req.run_mode,
                 allow_web_fetch=req.allow_web_fetch
             )
-            
+            # No server-side session in stateless mode; frontend will re-run with
+            # clarified parameters when users respond to prompts.
+            context.session = None
+
             # Log start
             await write_trace(trace_path, TraceEntry(
                 t=datetime.utcnow().isoformat(),
@@ -128,14 +150,14 @@ async def reason(req: ReasonRequest):
                 module=req.module,
                 input={"prompt": req.prompt[:100], "session_id": session_id}
             ))
-            
-            # Execute playbook
+
+            # Execute playbook normally (modules may emit prompt_user events)
             async for event in execute_playbook(context, trace_path):
                 yield {
                     "event": event["type"],
                     "data": json.dumps(event["data"], default=_json_default)
                 }
-            
+
             # Log completion
             await write_trace(trace_path, TraceEntry(
                 t=datetime.utcnow().isoformat(),
@@ -149,8 +171,12 @@ async def reason(req: ReasonRequest):
                 "event": "error",
                 "data": json.dumps({"message": str(e)}, default=_json_default)
             }
+        finally:
+            # Stateless mode: no per-request session cleanup required
+            pass
     
     return EventSourceResponse(event_generator())
+
 
 # Service endpoints (called by playbook tools)
 from services import policy, docs, spatial, precedent, standards, feedback, classify

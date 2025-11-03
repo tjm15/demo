@@ -9,7 +9,8 @@ import { PanelHost } from './PanelHost';
 import { ErrorBoundary } from './ErrorBoundary';
 import { RunControls } from './RunControls';
 import { AddEvidenceDialog, type AddEvidenceData } from './AddEvidenceDialog';
-import { useReasoningStream } from '../../hooks/useReasoningStream';
+import { UserPrompt } from './UserPrompt';
+import { useReasoningStream } from '../../hooks/useReasoningStreamV2';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { LOCAL_AUTHORITIES } from '../../constants';
 import { useEffect, useCallback } from 'react';
@@ -81,7 +82,17 @@ export function AppWorkspace() {
       });
     }, [ws.updateState]);
   
-    const { panels, isRunning, startReasoning, reasoning, suggestions, executeAction, hydrateDashboardState } = useReasoningStream({
+    const { 
+      panels, 
+      isRunning, 
+      startReasoning, 
+      reasoning, 
+      suggestions, 
+      executeAction, 
+      hydrateDashboardState,
+      currentPrompt,
+      submitPromptResponse 
+    } = useReasoningStream({
       onStateChange: handleStateChange
     });
   
@@ -536,6 +547,19 @@ export function AppWorkspace() {
         onClose={() => setShowAddEvidence(false)}
         onAdd={handleAddEvidence}
       />
+      
+      {/* Interactive User Prompt */}
+      {currentPrompt && (
+        <UserPrompt
+          promptId={currentPrompt.prompt_id}
+          question={currentPrompt.question}
+          inputType={currentPrompt.input_type}
+          options={currentPrompt.options}
+          defaultValue={currentPrompt.default}
+          onSubmit={submitPromptResponse}
+          onCancel={() => submitPromptResponse(null)}
+        />
+      )}
     </div>
   );
 }
