@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, ExternalLink } from 'lucide-react';
+import { FileText, ExternalLink, Book } from 'lucide-react';
 
 interface Policy {
   id: string;
@@ -7,6 +7,8 @@ interface Policy {
   relevance: number;
   text: string;
   source: string;
+  evidence_count?: number;
+  has_core_evidence?: boolean;
 }
 
 interface Citation {
@@ -71,6 +73,15 @@ export function ApplicablePolicies({ data }: ApplicablePoliciesProps) {
                   {policy.id}
                 </span>
                 <h4 className="font-semibold text-[color:var(--ink)]">{policy.title}</h4>
+                {policy.evidence_count !== undefined && policy.evidence_count > 0 && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200" title={`${policy.evidence_count} evidence item(s) linked`}>
+                    <Book className="w-3 h-3 text-blue-600" />
+                    <span className="text-[10px] font-bold text-blue-700">{policy.evidence_count}</span>
+                    {policy.has_core_evidence && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" title="Has core evidence" />
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-16 h-2 bg-[color:var(--edge)] rounded-full overflow-hidden">

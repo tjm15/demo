@@ -2,6 +2,117 @@
 
 A fully functioning AI-powered planning assistant with **stable LLM-driven dashboard diffusion**.
 
+## 📚 Documentation
+
+Complete documentation is in the **[`docs/`](docs/)** directory:
+
+- **[docs/README.md](docs/README.md)** - Full documentation index
+- **[docs/architecture/](docs/architecture/)** - System design & specifications
+- **[docs/guides/](docs/guides/)** - Practical how-to guides
+- **[docs/reference/](docs/reference/)** - API documentation
+
+### Key Documents
+
+- **[AGENTS.md](docs/architecture/AGENTS.md)** - Master specification
+- **[EVIDENCE_IMPROVEMENT_PLAN.md](docs/guides/EVIDENCE_IMPROVEMENT_PLAN.md)** - Evidence roadmap & tasks
+- **[DASHBOARD_DIFFUSION.md](docs/architecture/DASHBOARD_DIFFUSION.md)** - Patch pipeline guide
+- **[DEBUGGING.md](docs/guides/DEBUGGING.md)** - Troubleshooting
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Ubuntu 22.04 (or compatible Linux)
+- Python 3.12+
+- Node.js 18+ with pnpm
+- PostgreSQL 17 with PostGIS 3.6 and pgvector
+- Docker & Docker Compose (optional, for database)
+
+### 1. Clone and Setup
+
+```bash
+git clone <repository-url>
+cd demo
+cp .env.example .env  # Edit with your API keys
+```
+
+### 2. Start Services
+
+**Option A: Using start script (recommended)**
+```bash
+./start.sh
+```
+
+**Option B: Manual startup**
+```bash
+# Terminal 1: Database (Docker)
+cd docker && docker compose up -d && cd ..
+
+# Terminal 2: Backend Services
+cd apps/proxy
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --port 8082 --reload &
+
+cd ../kernel
+source ../../.venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --port 8081 --reload &
+
+# Terminal 3: Frontend
+cd website
+pnpm install
+pnpm run dev
+```
+
+### 3. Verify Services
+
+```bash
+# Check proxy (should return 200)
+curl -s http://127.0.0.1:8082/status
+
+# Check kernel (should return 200)
+curl -s http://127.0.0.1:8081/status
+
+# Check frontend
+# Open http://localhost:5173 in browser
+```
+
+### 4. Setup Database (First Run)
+
+```bash
+source .venv/bin/activate
+
+# Apply schemas
+psql -U tpa -d tpa -f scripts/schema.sql
+psql -U tpa -d tpa -f scripts/evidence_schema.sql
+
+# Seed data
+cd scripts
+python seed_evidence.py       # 46 evidence items
+python embed_evidence_chunks.py  # Vector embeddings
+python ingest_policy_graph.py
+python ingest_precedents.py
+```
+
+### 5. Try It Out!
+
+1. Open http://localhost:5173
+2. Click a module (DM, Evidence, Policy, etc.)
+3. Enter a prompt, e.g.:
+   - DM: "45 unit residential development, 6 storeys, near conservation area"
+   - Evidence: "Show housing evidence for Westminster"
+   - Policy: "Review policy H1 for consistency"
+4. Click **Run Analysis**
+5. Watch panels appear with animated transitions
+
+### Stop Services
+
+```bash
+./stop.sh
+```
+
+---
+
 ## 🎯 Overview
 
 The Planner's Assistant (TPA) is a production-ready application that provides AI-powered reasoning for:
@@ -23,8 +134,8 @@ The Planner's Assistant (TPA) is a production-ready application that provides AI
 - ✅ Transactional patches with rollback
 - ✅ Module-aware permissions
 
-📖 **See [DASHBOARD_DIFFUSION.md](DASHBOARD_DIFFUSION.md)** for implementation guide  
-📋 **See [PATCH_PIPELINE_QUICK_REF.md](PATCH_PIPELINE_QUICK_REF.md)** for quick reference
+📖 **See [docs/architecture/DASHBOARD_DIFFUSION.md](docs/architecture/DASHBOARD_DIFFUSION.md)** for implementation guide  
+📋 **See [docs/reference/PATCH_PIPELINE_QUICK_REF.md](docs/reference/PATCH_PIPELINE_QUICK_REF.md)** for quick reference
 
 ## 🏗️ Architecture
 
