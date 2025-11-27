@@ -27,8 +27,26 @@ fi
 # Start database stack if possible
 if [ -n "$COMPOSE_CMD" ]; then
     info "📦 Starting PostgreSQL + Redis (using $COMPOSE_CMD)..."
-    (cd docker && $COMPOSE_CMD up -d)
-    ok "✓ Database services started"
+    # Try to start from repo docker dir, with graceful fallback if FS denies access
+    mkdir -p /tmp/tpa
+    set +e
+    (cd docker && $COMPOSE_CMD up -d) > /tmp/tpa/compose.err 2>&1
+    COMPOSE_RC=$?
+    set -e
+    if [ $COMPOSE_RC -ne 0 ]; then
+        if grep -qi "permission denied" /tmp/tpa/compose.err; then
+            warn "Compose hit a permission error reading docker/docker-compose.yml. Applying fallback..."
+            mkdir -p /tmp/tpa/compose
+            cp -f docker/docker-compose.yml /tmp/tpa/compose/docker-compose.yml
+            (cd /tmp/tpa/compose && $COMPOSE_CMD up -d)
+            ok "✓ Database services started via fallback compose dir (/tmp/tpa/compose)"
+        else
+            err "❌ Docker Compose failed:\n$(cat /tmp/tpa/compose.err)"
+            exit $COMPOSE_RC
+        fi
+    else
+        ok "✓ Database services started"
+    fi
     echo ""
     sleep 2
 else
